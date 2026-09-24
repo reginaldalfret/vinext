@@ -1,5 +1,30 @@
 # vinext
 
+## 1.0.0-beta.13
+
+### Bug Fixes
+
+#### Pages Router
+
+- preserve dynamic href history state (#3368)
+- normalize repeated URL slashes (#3367)
+- format object as navigation urls (#3354)
+
+#### Misc
+
+- **Cache:** replay "use cache" params under the original cache key (#3430)
+- **Build:** keep browser client out of multi-stage server outputs (#3440)
+- **Cache:** keep "use cache" pages with props prerenderable (#3421)
+
+### Performance
+
+- **Build:** look up action owner modules once per build pass (#3415)
+
+### Contributors
+
+- @james-elicx
+- @shortstuffsushi
+
 ## 1.0.0-beta.12
 
 ### Bug Fixes
