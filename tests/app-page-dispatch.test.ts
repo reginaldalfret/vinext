@@ -3539,7 +3539,7 @@ describe("app page dispatch", () => {
   });
 
   it.each(["page", "metadata"] as const)(
-    "does not store a stale regeneration that reads searchParams in %s",
+    "keeps the previous entry when a stale regeneration reads searchParams in %s",
     async (reader) => {
       async function Page(props: Record<string, unknown>): Promise<React.ReactNode> {
         if (reader !== "page") return React.createElement("main", null, "static body");
@@ -3566,6 +3566,12 @@ describe("app page dispatch", () => {
       const route = createRoute({ pattern: "/regen-proof", routeSegments: ["regen-proof"] });
       let scheduledRender: unknown = null;
       const written: CachedAppPageValue[] = [];
+      const staleValue = buildCachedAppPageValue(
+        "<html>stale</html>",
+        undefined,
+        undefined,
+        buildQueryInvariantRenderObservation(),
+      );
       const buildPageElement = vi.fn<DispatchOptions["buildPageElement"]>(
         (_route, params, _opts, searchParams, layoutParamAccess, buildOptions) =>
           buildPageElements({
@@ -3594,17 +3600,11 @@ describe("app page dispatch", () => {
         buildPageElement,
         cleanPathname: "/regen-proof",
         isProduction: true,
-        isrGet: vi.fn(async () =>
-          buildISRCacheEntry(
-            buildCachedAppPageValue(
-              "<html>stale</html>",
-              undefined,
-              undefined,
-              buildQueryInvariantRenderObservation(),
-            ),
-            true,
-          ),
-        ),
+        isrGet: vi.fn(async () => {
+          const entry = buildISRCacheEntry(staleValue, true);
+          entry.value.cacheControl = { revalidate: 60 };
+          return entry;
+        }),
         isrSet: vi.fn(async (_key, value) => {
           written.push(value);
         }),
@@ -3634,11 +3634,12 @@ describe("app page dispatch", () => {
         throw new Error("expected stale response to schedule regeneration");
       }
 
-      await scheduledRender();
-
-      // The regeneration records the searchParams read, so neither entry is
-      // proven query-invariant and core skips both writes.
-      expect(written).toEqual([]);
+      // Reading searchParams makes the regeneration dynamic, so it fails and
+      // core re-stores only the previous entry.
+      await expect(scheduledRender()).rejects.toThrow(
+        "Page changed from static to dynamic at runtime /regen-proof",
+      );
+      expect(written).toEqual([staleValue]);
     },
   );
 
