@@ -85,7 +85,16 @@ describe("generateRscEntry ISR code generation", () => {
     expect(code).toContain(
       "isSiblingPageIntercept: intercept.interceptSlotKey === __SIBLING_PAGE_INTERCEPT_SLOT_KEY,",
     );
-    expect(code).toContain("const effectiveRoute = tree ? { ...route, ...tree } : route;");
+    expect(code).toContain("const effectiveRoute = tree?.route ?? route;");
+    // The direct intercept render's dynamic config and revalidate come from
+    // the same tree.
+    expect(code).toContain(`resolveRouteDynamicConfig(targetRoute, intercept) {
+        return __resolveRouteDynamicConfig(targetRoute, intercept);
+      },`);
+    expect(code).toContain(`resolveRouteRevalidateSeconds(targetRoute, intercept) {
+        return __resolveRouteRevalidateSeconds(targetRoute, intercept);
+      },`);
+    expect(code).toContain("const tree = __resolveRouteInterceptTree(route, intercept);");
     expect(code).toContain(`  return __isAppPageStaticEligible({
     ...__resolveRouteStaticGeneration(effectiveRoute, segmentConfigBranches),
     dynamicConfig: segmentConfig.dynamicConfig,

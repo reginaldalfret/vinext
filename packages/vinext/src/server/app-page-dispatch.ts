@@ -454,8 +454,19 @@ export type DispatchAppPageOptions<TRoute extends AppPageDispatchRoute> = {
   revalidateSeconds: number | null;
   renderedPathAndSearch?: string | null;
   resolveRouteFetchCacheMode?: (route: TRoute) => FetchCacheMode | null;
-  resolveRouteRevalidateSeconds?: (route: TRoute) => number | null;
-  resolveRouteDynamicConfig?: (route: TRoute) => string | null | undefined;
+  /**
+   * With an intercept, these resolve the tree a direct intercepted RSC
+   * response renders: the source route with the intercepting branch in place
+   * of what it intercepts, as `resolveRouteStaticEligible` classifies it.
+   */
+  resolveRouteRevalidateSeconds?: (
+    route: TRoute,
+    intercept?: AppPageStaticEligibilityIntercept<TRoute>,
+  ) => number | null;
+  resolveRouteDynamicConfig?: (
+    route: TRoute,
+    intercept?: AppPageStaticEligibilityIntercept<TRoute>,
+  ) => string | null | undefined;
   /**
    * `isAppPageStaticEligible` for another route, from that route's own segment
    * config, `generateStaticParams`, dynamism and runtime. A direct intercepted
@@ -657,21 +668,21 @@ async function runAppPageRevalidationContext<
 }
 
 /**
- * Whether an intercepting branch's layouts or page set `dynamic =
- * "force-dynamic"` or `revalidate = 0`. Either value holds for the whole tree
- * once any segment sets it: force-dynamic is sticky and the shortest
- * revalidate wins.
+ * The intercepting branch a direct intercepted RSC response renders, for the
+ * route config resolvers.
  */
-function isInterceptBranchKnownDynamic(
-  interceptOpts: AppPageDispatchInterceptOptions | undefined,
-): boolean {
-  if (!interceptOpts) return false;
-  return [...(interceptOpts.interceptLayouts ?? []), interceptOpts.interceptPage].some(
-    (segment) => {
-      const config = segment as AppPageModule | null | undefined;
-      return config?.dynamic === "force-dynamic" || config?.revalidate === 0;
-    },
-  );
+function toRouteConfigIntercept<TRoute>(
+  interceptOpts: AppPageDispatchInterceptOptions,
+  interceptedRoute: TRoute,
+): AppPageStaticEligibilityIntercept<TRoute> {
+  return {
+    interceptBranchSegments: interceptOpts.interceptBranchSegments,
+    interceptLayoutSegments: interceptOpts.interceptLayoutSegments,
+    interceptLayouts: interceptOpts.interceptLayouts,
+    interceptPage: interceptOpts.interceptPage,
+    interceptSlotKey: interceptOpts.interceptSlotKey,
+    interceptedRoute,
+  };
 }
 
 function toInterceptOptions(
@@ -1118,10 +1129,9 @@ async function dispatchAppPageInner<TRoute extends AppPageDispatchRoute>(
 
   let interceptDynamicConfig: string | null | undefined;
   let interceptDynamicConfigResolved = false;
-  // Whether the source route that the intercepted response renders, with the
-  // intercepting branch, is force-dynamic or revalidate = 0, from the config
-  // activated for its render and the branch's own, or read a dynamic API while
-  // probed.
+  // Whether the tree that the intercepted response renders (the source route
+  // with the intercepting branch) is force-dynamic or revalidate = 0, from the
+  // config activated for its render, or read a dynamic API while probed.
   let isInterceptSourceKnownDynamic = false;
   const interceptResult = await resolveAppPageIntercept<
     TRoute,
@@ -1142,9 +1152,12 @@ async function dispatchAppPageInner<TRoute extends AppPageDispatchRoute>(
       // The intercept route's fetch defaults must also stay active past this
       // call — its server components fetch lazily during the
       // renderToReadableStream in renderInterceptResponse below.
+      const routeConfigIntercept = interceptOpts
+        ? toRouteConfigIntercept(interceptOpts, route)
+        : undefined;
       const sourceDynamicConfig = interceptDynamicConfigResolved
         ? interceptDynamicConfig
-        : options.resolveRouteDynamicConfig?.(interceptRoute);
+        : options.resolveRouteDynamicConfig?.(interceptRoute, routeConfigIntercept);
       if (sourceDynamicConfig === "force-static" || sourceDynamicConfig === "error") {
         const { createStaticGenerationHeadersContext } = await import("./app-static-generation.js");
         setHeadersContext(
@@ -1160,11 +1173,9 @@ async function dispatchAppPageInner<TRoute extends AppPageDispatchRoute>(
         setHeadersContext(requestHeadersContext);
       }
       const sourceRevalidateSeconds =
-        options.resolveRouteRevalidateSeconds?.(interceptRoute) ?? null;
+        options.resolveRouteRevalidateSeconds?.(interceptRoute, routeConfigIntercept) ?? null;
       isInterceptSourceKnownDynamic =
-        sourceDynamicConfig === "force-dynamic" ||
-        sourceRevalidateSeconds === 0 ||
-        isInterceptBranchKnownDynamic(interceptOpts);
+        sourceDynamicConfig === "force-dynamic" || sourceRevalidateSeconds === 0;
       setCurrentFetchCacheMode(options.resolveRouteFetchCacheMode?.(interceptRoute) ?? null);
       setCurrentFetchRevalidate(sourceRevalidateSeconds);
       setCurrentForceDynamicFetchDefault(sourceDynamicConfig === "force-dynamic");
@@ -1229,14 +1240,10 @@ async function dispatchAppPageInner<TRoute extends AppPageDispatchRoute>(
       // still wins, merged after, as in the RSC builder.
       const isSourceStaticEligible =
         options.pprRuntime !== undefined ||
-        options.resolveRouteStaticEligible(sourceRoute, {
-          interceptBranchSegments: interceptOpts.interceptBranchSegments,
-          interceptLayoutSegments: interceptOpts.interceptLayoutSegments,
-          interceptLayouts: interceptOpts.interceptLayouts,
-          interceptPage: interceptOpts.interceptPage,
-          interceptSlotKey: interceptOpts.interceptSlotKey,
-          interceptedRoute: route,
-        });
+        options.resolveRouteStaticEligible(
+          sourceRoute,
+          toRouteConfigIntercept(interceptOpts, route),
+        );
       if (!isSourceStaticEligible || isDraftMode || isInterceptSourceKnownDynamic) {
         interceptHeaders.set("Cache-Control", resolveUncacheableCacheControl(options.isProduction));
       }
@@ -1248,9 +1255,12 @@ async function dispatchAppPageInner<TRoute extends AppPageDispatchRoute>(
         headers: interceptHeaders,
       });
     },
-    async resolveSearchParams(sourceRoute, searchParams) {
+    async resolveSearchParams(sourceRoute, searchParams, interceptOpts) {
       await options.ensureRouteLoaded?.(sourceRoute);
-      interceptDynamicConfig = options.resolveRouteDynamicConfig?.(sourceRoute);
+      interceptDynamicConfig = options.resolveRouteDynamicConfig?.(
+        sourceRoute,
+        toRouteConfigIntercept(interceptOpts, route),
+      );
       interceptDynamicConfigResolved = true;
       return interceptDynamicConfig === "force-static" ? new URLSearchParams() : searchParams;
     },

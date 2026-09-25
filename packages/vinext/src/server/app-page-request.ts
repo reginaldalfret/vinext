@@ -182,6 +182,7 @@ type ResolveAppPageInterceptOptions<TRoute, TPage, TInterceptOpts, TElement> = {
   resolveSearchParams?: (
     route: TRoute,
     searchParams: URLSearchParams,
+    interceptOpts: TInterceptOpts,
   ) => Awaitable<URLSearchParams>;
   searchParams: URLSearchParams;
   setNavigationContext: (context: {
@@ -750,7 +751,7 @@ export async function resolveAppPageIntercept<TRoute, TPage, TInterceptOpts, TEl
       ...interceptState.intercept.matchedParams,
     };
     const renderSearchParams = options.resolveSearchParams
-      ? await options.resolveSearchParams(renderRoute, options.searchParams)
+      ? await options.resolveSearchParams(renderRoute, options.searchParams, interceptOpts)
       : options.searchParams;
     const renderParams = pickRouteParams(
       sourceMatchedParams,

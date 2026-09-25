@@ -931,7 +931,17 @@ function __resolveRouteFetchCacheMode(route) {
   });
 }
 
-function __resolveRouteDynamicConfig(route) {
+// With an intercept, the tree a direct intercepted RSC response renders, from
+// __resolveRouteInterceptTree.
+function __resolveRouteDynamicConfig(route, intercept) {
+  if (intercept) {
+    const tree = __resolveRouteInterceptTree(route, intercept);
+    return __resolveAppPageSegmentConfig({
+      layouts: tree.route.layouts,
+      page: tree.route.page,
+      parallelBranches: tree.branches,
+    }).dynamicConfig ?? null;
+  }
   return __resolveAppPageSegmentConfig({
     layouts: route.layouts,
     page: route.page,
@@ -943,7 +953,17 @@ function __resolveRouteDynamicConfig(route) {
   }).dynamicConfig ?? null;
 }
 
-function __resolveRouteRevalidateSeconds(route) {
+// With an intercept, the tree a direct intercepted RSC response renders, from
+// __resolveRouteInterceptTree.
+function __resolveRouteRevalidateSeconds(route, intercept) {
+  if (intercept) {
+    const tree = __resolveRouteInterceptTree(route, intercept);
+    return __resolveAppPageSegmentConfig({
+      layouts: tree.route.layouts,
+      page: tree.route.page,
+      parallelBranches: tree.branches,
+    }).revalidateSeconds;
+  }
   return __resolveAppPageSegmentConfig({
     layouts: route.layouts,
     page: route.page,
@@ -1018,6 +1038,27 @@ function __resolveRouteStaticGeneration(route, segmentConfigBranches) {
   };
 }
 
+// The tree a direct intercepted RSC response renders: the source route with
+// the intercepting branch in the intercepted slot, or in place of the source's
+// page for a sibling-page intercept.
+function __resolveRouteInterceptTree(route, intercept) {
+  const tree = __resolveAppPageInterceptTree({
+    childrenSlot: route.childrenSlot,
+    interceptBranchSegments: intercept.interceptBranchSegments,
+    interceptLayoutSegments: intercept.interceptLayoutSegments,
+    interceptLayouts: intercept.interceptLayouts,
+    interceptPage: intercept.interceptPage,
+    isSiblingPageIntercept: intercept.interceptSlotKey === __SIBLING_PAGE_INTERCEPT_SLOT_KEY,
+    layouts: route.layouts,
+    layoutTreePositions: route.layoutTreePositions,
+    page: route.page,
+    parallelBranches: __resolveRouteSegmentConfigBranches(route),
+    routeSegments: route.routeSegments,
+    slotIndex: Object.keys(route.slots ?? {}).indexOf(intercept.interceptSlotKey),
+  });
+  return { branches: tree.parallelBranches, route: { ...route, ...tree } };
+}
+
 // Whether Next.js classifies a route as static or SSG, from the same inputs
 // dispatch reads for the matched route. With an intercept, the route is the
 // source a direct intercepted RSC response renders, and the intercepting
@@ -1025,25 +1066,9 @@ function __resolveRouteStaticGeneration(route, segmentConfigBranches) {
 // intercept: Next.js classifies the intercepting route's own tree, which is
 // dynamic when the intercepted route is.
 function __resolveRouteStaticEligible(route, intercept) {
-  const tree = intercept
-    ? __resolveAppPageInterceptTree({
-        childrenSlot: route.childrenSlot,
-        interceptBranchSegments: intercept.interceptBranchSegments,
-        interceptLayoutSegments: intercept.interceptLayoutSegments,
-        interceptLayouts: intercept.interceptLayouts,
-        interceptPage: intercept.interceptPage,
-        isSiblingPageIntercept: intercept.interceptSlotKey === __SIBLING_PAGE_INTERCEPT_SLOT_KEY,
-        layouts: route.layouts,
-        layoutTreePositions: route.layoutTreePositions,
-        page: route.page,
-        parallelBranches: __resolveRouteSegmentConfigBranches(route),
-        routeSegments: route.routeSegments,
-        slotIndex: Object.keys(route.slots ?? {}).indexOf(intercept.interceptSlotKey),
-      })
-    : null;
-  const effectiveRoute = tree ? { ...route, ...tree } : route;
-  const segmentConfigBranches =
-    tree?.parallelBranches ?? __resolveRouteSegmentConfigBranches(route);
+  const tree = intercept ? __resolveRouteInterceptTree(route, intercept) : null;
+  const effectiveRoute = tree?.route ?? route;
+  const segmentConfigBranches = tree?.branches ?? __resolveRouteSegmentConfigBranches(route);
   const segmentConfig = __resolveRouteSegmentConfig(effectiveRoute, segmentConfigBranches);
   return __isAppPageStaticEligible({
     ...__resolveRouteStaticGeneration(effectiveRoute, segmentConfigBranches),
@@ -1575,11 +1600,11 @@ ${responseStageOnly ? "const __responseStageOptions = {" : "const __appRscHandle
       resolveRouteFetchCacheMode(targetRoute) {
         return __resolveRouteFetchCacheMode(targetRoute);
       },
-      resolveRouteRevalidateSeconds(targetRoute) {
-        return __resolveRouteRevalidateSeconds(targetRoute);
+      resolveRouteRevalidateSeconds(targetRoute, intercept) {
+        return __resolveRouteRevalidateSeconds(targetRoute, intercept);
       },
-      resolveRouteDynamicConfig(targetRoute) {
-        return __resolveRouteDynamicConfig(targetRoute);
+      resolveRouteDynamicConfig(targetRoute, intercept) {
+        return __resolveRouteDynamicConfig(targetRoute, intercept);
       },
       resolveRouteStaticEligible(targetRoute, intercept) {
         return __resolveRouteStaticEligible(targetRoute, intercept);
