@@ -2976,6 +2976,29 @@ describe("app page dispatch", () => {
         );
       });
 
+      it(`sends the never-cache header for a ${label} intercepting page in a cacheComponents build`, async () => {
+        // app/feed/@modal/(.)photos/[id]/page.tsx sets the config, so the
+        // intercepting route's tree is known dynamic.
+        const response = await dispatchIntercept({
+          findIntercept: () => ({
+            matchedParams: { id: "123" },
+            page: {
+              default: "modal-page",
+              dynamic: config.dynamicConfig,
+              revalidate: config.revalidateSeconds,
+            },
+            slotKey: "modal@app/feed/@modal",
+            sourceRouteIndex: 1,
+          }),
+          pprRuntime: appPagePprRuntime,
+        });
+
+        await expect(response.text()).resolves.toBe("/feed");
+        expect(response.headers.get("cache-control")).toBe(
+          "private, no-cache, no-store, max-age=0, must-revalidate",
+        );
+      });
+
       for (const pprRuntime of [undefined, appPagePprRuntime]) {
         const build = pprRuntime ? "a cacheComponents build" : "a standard build";
 

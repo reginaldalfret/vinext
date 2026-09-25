@@ -656,6 +656,24 @@ async function runAppPageRevalidationContext<
   }
 }
 
+/**
+ * Whether an intercepting branch's layouts or page set `dynamic =
+ * "force-dynamic"` or `revalidate = 0`. Either value holds for the whole tree
+ * once any segment sets it: force-dynamic is sticky and the shortest
+ * revalidate wins.
+ */
+function isInterceptBranchKnownDynamic(
+  interceptOpts: AppPageDispatchInterceptOptions | undefined,
+): boolean {
+  if (!interceptOpts) return false;
+  return [...(interceptOpts.interceptLayouts ?? []), interceptOpts.interceptPage].some(
+    (segment) => {
+      const config = segment as AppPageModule | null | undefined;
+      return config?.dynamic === "force-dynamic" || config?.revalidate === 0;
+    },
+  );
+}
+
 function toInterceptOptions(
   interceptionContext: string | null,
   intercept: AppPageDispatchIntercept,
@@ -1100,9 +1118,10 @@ async function dispatchAppPageInner<TRoute extends AppPageDispatchRoute>(
 
   let interceptDynamicConfig: string | null | undefined;
   let interceptDynamicConfigResolved = false;
-  // Whether the source route that the intercepted response renders is
-  // force-dynamic or revalidate = 0, from the config activated for its render,
-  // or read a dynamic API while probed.
+  // Whether the source route that the intercepted response renders, with the
+  // intercepting branch, is force-dynamic or revalidate = 0, from the config
+  // activated for its render and the branch's own, or read a dynamic API while
+  // probed.
   let isInterceptSourceKnownDynamic = false;
   const interceptResult = await resolveAppPageIntercept<
     TRoute,
@@ -1143,7 +1162,9 @@ async function dispatchAppPageInner<TRoute extends AppPageDispatchRoute>(
       const sourceRevalidateSeconds =
         options.resolveRouteRevalidateSeconds?.(interceptRoute) ?? null;
       isInterceptSourceKnownDynamic =
-        sourceDynamicConfig === "force-dynamic" || sourceRevalidateSeconds === 0;
+        sourceDynamicConfig === "force-dynamic" ||
+        sourceRevalidateSeconds === 0 ||
+        isInterceptBranchKnownDynamic(interceptOpts);
       setCurrentFetchCacheMode(options.resolveRouteFetchCacheMode?.(interceptRoute) ?? null);
       setCurrentFetchRevalidate(sourceRevalidateSeconds);
       setCurrentForceDynamicFetchDefault(sourceDynamicConfig === "force-dynamic");
