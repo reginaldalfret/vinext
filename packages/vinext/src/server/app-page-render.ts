@@ -26,6 +26,7 @@ import {
 } from "./app-page-execution.js";
 import { probeAppPageBeforeRender } from "./app-page-probe.js";
 import {
+  applyEdgeRuntimeHeader,
   buildAppPageHtmlResponse,
   buildAppPageRscResponse,
   resolveAppPageHtmlResponsePolicy,
@@ -1240,6 +1241,7 @@ async function renderAppPageLifecycleImpl(
         const headers = new Headers();
         mergeMiddlewareResponseHeaders(headers, options.middlewareContext.headers);
         headers.set("Cache-Control", NEVER_CACHE_CONTROL);
+        applyEdgeRuntimeHeader(headers, options.isEdgeRuntime);
         const response = internalServerErrorResponse(undefined, { headers });
         applyCdnResponseHeaders(response.headers, { cacheControl: NEVER_CACHE_CONTROL });
         return Promise.resolve(response);

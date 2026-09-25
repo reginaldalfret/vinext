@@ -1063,6 +1063,7 @@ describe("app page render lifecycle", () => {
         ...common.options,
         clearRequestContext,
         isCacheCandidate: true,
+        isEdgeRuntime: true,
         isProduction: true,
         middlewareContext: {
           headers: new Headers({ "set-cookie": "mw=1; Path=/", "x-middleware": "kept" }),
@@ -1086,6 +1087,7 @@ describe("app page render lifecycle", () => {
       );
       expect(response.headers.get("set-cookie")).toBe("mw=1; Path=/");
       expect(response.headers.get("x-middleware")).toBe("kept");
+      expect(response.headers.get("x-edge-runtime")).toBe("1");
       await expect(response.text()).resolves.toBe("Internal Server Error");
       expect(common.renderErrorBoundaryResponse).not.toHaveBeenCalled();
       expect(common.isrSet).not.toHaveBeenCalled();
