@@ -1429,7 +1429,9 @@ async function dispatchAppPageInner<TRoute extends AppPageDispatchRoute>(
     },
     handlerStart: options.handlerStart,
     hasLoadingBoundary: hasActiveLoadingBoundary,
-    omitPendingDynamicCacheState: hasRequestSearchParams && !isCacheCandidate,
+    // Only candidate HTML renders gate searchParams, so their MISS is final.
+    omitPendingDynamicCacheState:
+      hasRequestSearchParams && !(isCacheCandidate && !options.isRscRequest),
     formState: options.formState ?? null,
     isProgressiveActionRender: options.isProgressiveActionRender === true,
     isDynamicError,
