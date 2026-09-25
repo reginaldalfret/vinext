@@ -58,6 +58,7 @@ import {
   type AppPageRenderDependency,
 } from "./app-render-dependency.js";
 import { isPromiseLike } from "../utils/promise.js";
+import { APP_PAGE_INTERCEPTION_MARKER_TRAVERSALS } from "./app-page-interception-markers.js";
 
 function resolveInterceptLayoutParams(
   branchSegments: readonly string[],
@@ -829,13 +830,6 @@ function buildSlotOverrides<TModule extends AppPageModule, TErrorModule extends 
 
   return Object.keys(overrides).length > 0 ? overrides : null;
 }
-
-export const APP_PAGE_INTERCEPTION_MARKER_TRAVERSALS = [
-  { prefix: "(...)", levels: Number.POSITIVE_INFINITY },
-  { prefix: "(..)(..)", levels: 2 },
-  { prefix: "(..)", levels: 1 },
-  { prefix: "(.)", levels: 0 },
-] as const;
 
 function resolveInterceptedSlotSource(
   sourcePageSegments: readonly string[] | null | undefined,

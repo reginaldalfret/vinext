@@ -1,4 +1,5 @@
 import type { FetchCacheMode } from "vinext/shims/fetch-cache";
+import { APP_PAGE_INTERCEPTION_MARKER_TRAVERSALS } from "./app-page-interception-markers.js";
 import { isEdgeApiRuntime } from "./edge-api-runtime.js";
 
 type AppRouteSegmentDynamic = "auto" | "error" | "force-dynamic" | "force-static";
@@ -111,7 +112,13 @@ function resolveDynamicStaleTimeSeconds(
 }
 
 function isDynamicSegment(segment: string): boolean {
-  return segment.startsWith("[") && segment.endsWith("]");
+  // An intercepting folder keeps its marker: `(.)[photo]` is the `photo` param.
+  // https://github.com/vercel/next.js/blob/v16.2.7/packages/next/src/shared/lib/router/utils/get-segment-param.tsx
+  const marker = APP_PAGE_INTERCEPTION_MARKER_TRAVERSALS.find(({ prefix }) =>
+    segment.startsWith(prefix),
+  );
+  const name = marker ? segment.slice(marker.prefix.length) : segment;
+  return name.startsWith("[") && name.endsWith("]");
 }
 
 function resolveSegmentConfigOwnerPosition(

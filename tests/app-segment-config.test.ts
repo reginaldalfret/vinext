@@ -1219,4 +1219,34 @@ describe("resolveAppPageInterceptTree", () => {
     });
     expect(hasAppPageGenerateStaticParamsAtLastDynamicSegment(tree)).toBe(false);
   });
+
+  it("counts a marker-prefixed intercepting folder as a dynamic segment", () => {
+    // app/[user]/layout.tsx exports generateStaticParams; the intercepting
+    // app/[user]/feed/@modal/(.)[photo]/page.tsx, or the sibling-page
+    // app/[user]/feed/(..)(..)[photo]/page.tsx, doesn't, so [photo] has none.
+    const source = {
+      childrenSlot: { ownerTreePath: "/[user]/feed", state: "active" },
+      interceptPage: {},
+      layouts: [{}, { generateStaticParams: () => [] }],
+      layoutTreePositions: [0, 1],
+      page: {},
+      routeSegments: ["[user]", "feed"],
+    } as const;
+    const slotTree = resolveAppPageInterceptTree({
+      ...source,
+      interceptBranchSegments: ["(.)[photo]"],
+      isSiblingPageIntercept: false,
+      parallelBranches: [{ ...modalDefault, ownerTreePosition: 2 }],
+      slotIndex: 0,
+    });
+    const siblingTree = resolveAppPageInterceptTree({
+      ...source,
+      interceptBranchSegments: ["(..)(..)[photo]"],
+      isSiblingPageIntercept: true,
+      parallelBranches: [],
+      slotIndex: -1,
+    });
+    expect(hasAppPageGenerateStaticParamsAtLastDynamicSegment(slotTree)).toBe(false);
+    expect(hasAppPageGenerateStaticParamsAtLastDynamicSegment(siblingTree)).toBe(false);
+  });
 });
