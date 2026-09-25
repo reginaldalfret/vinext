@@ -1,6 +1,7 @@
 import { Suspense, createElement } from "react";
 import { makeThenableParams } from "vinext/shims/thenable-params";
 import { withUseCachePageMarker } from "vinext/shims/internal/app-page-props-cache-key";
+import { ClientPageRoot } from "vinext/shims/client-page-root";
 import {
   prepareAppPageHead,
   resolveActiveParallelRouteHeadInputs,
@@ -56,6 +57,7 @@ import {
 import {
   createAppPageRenderDependency,
   invokeAppComponent,
+  isAppClientReference,
   isAppRenderSuspension,
   isReactOwnedAppComponent,
   renderAfterAppDependencies,
@@ -575,6 +577,16 @@ export async function buildPageElements<
     props: Readonly<Record<string, unknown>>,
     renderDependency?: AppPageRenderDependency | null,
   ) => {
+    if (searchParams && isAppClientReference(PageComponent)) {
+      // Like Next.js's ClientPageRoot, a client page gets `searchParams` where
+      // it renders, not through Flight. Flight would call `then` on the prop
+      // while serializing it, so every client page would count as reading the
+      // query, and its RSC payload would carry it. Slot props arrive with the
+      // route's searchParams attached, so drop them here.
+      const { searchParams: _slotSearchParams, ...pageProps } = props;
+      return createElement(ClientPageRoot, { Component: PageComponent, pageProps });
+    }
+
     if (isReactOwnedAppComponent(PageComponent)) {
       const invocationProps: Record<string, unknown> = { ...props };
       if (searchParams) {
