@@ -102,7 +102,13 @@ import {
   isRouteCacheabilityIdentityProbe,
   isRouteCacheabilityProbe,
   markRouteCacheabilityPatternDynamic,
+  readRouteCacheabilityState,
 } from "vinext/shims/cacheability-classification";
+import {
+  cacheabilityManifestPageState,
+  type CacheabilityManifest,
+  type CacheabilityRepresentation,
+} from "./cacheability-manifest.js";
 import type { AppRenderErrorContextOverrides } from "./app-rsc-error-handler.js";
 import { traceResponseStart } from "./response-start-tracing.js";
 
@@ -774,6 +780,28 @@ async function probeAppPageInterceptSourceDynamicUsage<TRoute extends AppPageDis
   return consumeDynamicUsage();
 }
 
+/**
+ * Workers Cache never admits a path its deploy manifest gives no state: a
+ * listed path that used a dynamic API, or an unlisted path of a route without
+ * on-demand ISR. Next.js serves those per request, so they render normally,
+ * with real values. Without a manifest, admission uses the `runtime` policy
+ * and every path keeps candidate mode, as on core.
+ */
+function hasNoManifestAdmissionState(routePattern: string): boolean {
+  const admission = readRouteCacheabilityState()?.admission;
+  return (
+    admission?.policy === "manifest" &&
+    admission.representation !== undefined &&
+    admission.routePathname !== undefined &&
+    cacheabilityManifestPageState(
+      admission.manifest as CacheabilityManifest,
+      { kind: "app-page", pattern: routePattern },
+      admission.representation as CacheabilityRepresentation,
+      admission.routePathname,
+    ) === null
+  );
+}
+
 export async function dispatchAppPage<TRoute extends AppPageDispatchRoute>(
   options: DispatchAppPageOptions<TRoute>,
 ): Promise<Response> {
@@ -919,8 +947,7 @@ async function dispatchAppPageInner<TRoute extends AppPageDispatchRoute>(
     });
   }
 
-  const shouldReadCache =
-    !isRouteCacheabilityProbe() &&
+  const isCacheEligibleRender =
     options.bypassInterceptionContextCache !== true &&
     isStaticEligible &&
     shouldReadAppPageCache({
@@ -932,10 +959,15 @@ async function dispatchAppPageInner<TRoute extends AppPageDispatchRoute>(
       revalidateSeconds: currentRevalidateSeconds,
       scriptNonce: options.scriptNonce,
     });
+  const shouldReadCache = !isRouteCacheabilityProbe() && isCacheEligibleRender;
   // A render that may be stored, and so must not let the request's query reach
-  // its output unless it turns out dynamic. PPR fallback shells follow
-  // cacheComponents' model instead.
-  const isCacheCandidate = shouldReadCache && options.pprRuntime === undefined;
+  // its output unless it turns out dynamic. The Workers Cache deploy probe
+  // renders this way too, so its manifest matches the runtime. PPR fallback
+  // shells follow cacheComponents' model instead.
+  const isCacheCandidate =
+    isCacheEligibleRender &&
+    options.pprRuntime === undefined &&
+    !hasNoManifestAdmissionState(route.pattern);
   if (shouldReadCache) {
     traceOperation = resolveAppPageTraceOperation({
       hasRequestSearchParams,
