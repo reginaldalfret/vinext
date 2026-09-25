@@ -1424,6 +1424,7 @@ ${responseStageOnly ? "const __responseStageOptions = {" : "const __appRscHandle
           renderMode,
           observeMetadataSearchParamsAccess: buildOptions?.observeMetadataSearchParamsAccess === true,
           observePageSearchParamsAccess: buildOptions?.observePageSearchParamsAccess === true,
+          isForceStatic: buildOptions?.isForceStatic === true,
           serveStreamingMetadata: buildOptions?.serveStreamingMetadata,
           isProduction: process.env.NODE_ENV === "production",
         }, layoutParamAccess, displayPathname, scriptNonce);
@@ -1859,6 +1860,7 @@ ${responseStageOnly ? "const __responseStageOptions = {" : "const __appRscHandle
         renderMode: actionRenderMode,
         observeMetadataSearchParamsAccess,
         observePageSearchParamsAccess,
+        isForceStatic,
         scriptNonce: targetScriptNonce,
       }) {
         return buildPageElements(actionRoute, actionParams, actionCleanPathname, {
@@ -1870,6 +1872,7 @@ ${responseStageOnly ? "const __responseStageOptions = {" : "const __appRscHandle
           renderMode: actionRenderMode,
           observeMetadataSearchParamsAccess: observeMetadataSearchParamsAccess === true,
           observePageSearchParamsAccess: observePageSearchParamsAccess === true,
+          isForceStatic: isForceStatic === true,
         }, undefined, actionCleanPathname, targetScriptNonce ?? scriptNonce);
       },
       cleanPathname,
