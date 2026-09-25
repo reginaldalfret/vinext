@@ -3004,6 +3004,24 @@ describe("app page dispatch", () => {
       );
     });
 
+    it("counts a dynamic API read while the source element is built", async () => {
+      // app/feed/page.tsx's generateMetadata (or generateViewport) calls
+      // headers(), which runs while the element tree is built, not in the
+      // layout and page probes.
+      const response = await dispatchIntercept({
+        async buildPageElement(route) {
+          if (route === sourceRoute) markDynamicUsage();
+          return route.pattern;
+        },
+        createInterceptSourceProbes: () => ({ probeLayoutAt() {}, probePage() {} }),
+      });
+
+      await expect(response.text()).resolves.toBe("/feed");
+      expect(response.headers.get("cache-control")).toBe(
+        "private, no-cache, no-store, max-age=0, must-revalidate",
+      );
+    });
+
     it("doesn't count dynamic API reads from before the source is probed", async () => {
       const response = await dispatchIntercept({
         createInterceptSourceProbes: () => ({ probeLayoutAt() {}, probePage() {} }),

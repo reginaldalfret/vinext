@@ -715,8 +715,9 @@ function toInterceptOptions(
 /**
  * Probe the source route that a direct intercepted RSC response renders, as the
  * render lifecycle probes the matched route before its response headers, and
- * report whether it read a dynamic API. Usage recorded earlier in the request
- * doesn't belong to the source, so it is discarded first.
+ * report whether it read a dynamic API while its element was built (viewport
+ * and metadata resolution) or probed. The caller discards earlier usage, which
+ * doesn't belong to the source, before building the element.
  */
 async function probeAppPageInterceptSourceDynamicUsage<TRoute extends AppPageDispatchRoute>(
   options: DispatchAppPageOptions<TRoute>,
@@ -725,8 +726,7 @@ async function probeAppPageInterceptSourceDynamicUsage<TRoute extends AppPageDis
   searchParams: URLSearchParams,
 ): Promise<boolean> {
   const probes = options.createInterceptSourceProbes?.(route, params, searchParams);
-  if (!probes) return false;
-  consumeDynamicUsage();
+  if (!probes) return consumeDynamicUsage();
   const loadingTreePositions = getActiveLoadingTreePositions(route);
   // Special errors and other probe failures surface through the intercepted
   // response's own render, as before.
@@ -1179,6 +1179,8 @@ async function dispatchAppPageInner<TRoute extends AppPageDispatchRoute>(
       setCurrentFetchCacheMode(options.resolveRouteFetchCacheMode?.(interceptRoute) ?? null);
       setCurrentFetchRevalidate(sourceRevalidateSeconds);
       setCurrentForceDynamicFetchDefault(sourceDynamicConfig === "force-dynamic");
+      // Usage recorded so far belongs to the matched target, not the source.
+      consumeDynamicUsage();
       const interceptElement = await options.buildPageElement(
         interceptRoute,
         interceptParams,
