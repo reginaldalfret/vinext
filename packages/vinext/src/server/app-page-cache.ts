@@ -108,7 +108,12 @@ type ReadAppPageCacheResponseOptions = {
   middlewareHeaders?: Headers | null;
   middlewareStatus?: number | null;
   mountedSlotsHeader?: string | null;
-  params?: Record<string, string | string[]>;
+  /**
+   * Resolves the current request's route params for a cached RSC response.
+   * Called only once an entry can answer the request, since resolving them
+   * may load route modules.
+   */
+  resolveParams?: () => Promise<Record<string, string | string[]>>;
   recordCacheOutcome?: AppPageCacheOutcomeRecorder;
   renderedPathAndSearch?: string | null;
   renderMode?: AppRscRenderMode;
@@ -416,6 +421,8 @@ export async function readAppPageCacheResponse(
       )
     : options.isrHtmlKey(options.cleanPathname);
   const artifact = options.isRscRequest ? "rsc" : "html";
+  const resolveCachedResponseParams = async (cachedValue: CachedAppPageValue) =>
+    options.isRscRequest && cachedValue.rscData ? await options.resolveParams?.() : undefined;
 
   try {
     const cached = await options.isrGet(isrKey);
@@ -468,7 +475,7 @@ export async function readAppPageCacheResponse(
         middlewareHeaders: options.middlewareHeaders,
         middlewareStatus: options.middlewareStatus,
         mountedSlotsHeader: options.mountedSlotsHeader,
-        params: options.params,
+        params: await resolveCachedResponseParams(cachedValue),
         renderedPathAndSearch: options.renderedPathAndSearch,
         revalidateSeconds: options.revalidateSeconds,
       });
@@ -618,7 +625,7 @@ export async function readAppPageCacheResponse(
         middlewareHeaders: options.middlewareHeaders,
         middlewareStatus: options.middlewareStatus,
         mountedSlotsHeader: options.mountedSlotsHeader,
-        params: options.params,
+        params: await resolveCachedResponseParams(cachedValue),
         renderedPathAndSearch: options.renderedPathAndSearch,
         revalidateSeconds: options.revalidateSeconds,
       });
