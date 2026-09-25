@@ -3041,6 +3041,29 @@ describe("app page dispatch", () => {
       );
     });
 
+    it("tells the intercepting layout probes where the source's loading boundaries are", async () => {
+      // app/feed/loading.tsx
+      const loadingSourceRoute = createRoute({
+        loadingTreePositions: [1],
+        loadings: [{ default: () => null }],
+        params: [],
+        pattern: "/feed",
+        routeSegments: ["feed"],
+      });
+      const probeInterceptLayouts = vi.fn();
+      const response = await dispatchIntercept({
+        createInterceptSourceProbes: () => ({
+          probeInterceptLayouts,
+          probeLayoutAt() {},
+          probePage() {},
+        }),
+        getSourceRoute: (index) => (index === 1 ? loadingSourceRoute : undefined),
+      });
+
+      await response.text();
+      expect(probeInterceptLayouts).toHaveBeenCalledWith([1]);
+    });
+
     it("doesn't count dynamic API reads from before the source is probed", async () => {
       const response = await dispatchIntercept({
         createInterceptSourceProbes: () => ({ probeLayoutAt() {}, probePage() {} }),

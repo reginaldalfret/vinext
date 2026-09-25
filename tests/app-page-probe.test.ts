@@ -983,6 +983,7 @@ describe("buildAppPageInterceptLayoutProbes", () => {
       },
       isRscRequest: true,
       sourceParams: {},
+      sourceLoadingTreePositions: [],
       makeThenableParams: makeThenableParamsLoose,
     });
 
@@ -1008,6 +1009,7 @@ describe("buildAppPageInterceptLayoutProbes", () => {
       },
       isRscRequest: true,
       sourceParams: {},
+      sourceLoadingTreePositions: [],
       makeThenableParams: makeThenableParamsLoose,
     });
 
@@ -1051,6 +1053,7 @@ describe("buildAppPageInterceptLayoutProbes", () => {
       },
       isRscRequest: true,
       sourceParams: { team: "acme" },
+      sourceLoadingTreePositions: [],
       makeThenableParams: makeThenableParamsLoose,
     });
 
@@ -1087,6 +1090,7 @@ describe("buildAppPageInterceptLayoutProbes", () => {
       },
       isRscRequest: true,
       sourceParams: { team: "acme" },
+      sourceLoadingTreePositions: [],
       makeThenableParams: makeThenableParamsLoose,
     });
 
@@ -1098,6 +1102,98 @@ describe("buildAppPageInterceptLayoutProbes", () => {
     ]);
   });
 
+  // An async layout below a loading boundary streams behind its fallback, so
+  // awaiting its probe would hold the response headers.
+  const neverSettlingLayout = () =>
+    function Layout(): Promise<React.ReactNode> {
+      return new Promise(() => {});
+    };
+
+  // app/feed/@modal/(.)photos/loading.tsx above
+  // app/feed/@modal/(.)photos/[id]/layout.tsx
+  it("stops at an intercepting loading boundary", async () => {
+    const probed: string[] = [];
+    const probes = buildAppPageInterceptLayoutProbes({
+      route: { slots: { modal: { layout: { default: recordingLayout("modal", probed) } } } },
+      intercept: {
+        interceptBranchSegments: ["(.)photos", "[id]"],
+        interceptLayouts: [
+          { default: recordingLayout("photos", probed) },
+          { default: neverSettlingLayout() },
+        ],
+        interceptLayoutSegments: [["(.)photos"], ["(.)photos", "[id]"]],
+        interceptLoadings: [{ default: () => null }],
+        interceptLoadingTreePositions: [1],
+        matchedParams: { id: "123" },
+        slotKey: "modal",
+      },
+      isRscRequest: true,
+      sourceParams: {},
+      sourceLoadingTreePositions: [],
+      makeThenableParams: makeThenableParamsLoose,
+    });
+
+    await Promise.all(probes);
+
+    expect(probed).toEqual(["modal", "photos"]);
+  });
+
+  it("stops below the intercepted slot's root loading boundary", async () => {
+    const probed: string[] = [];
+    const probes = buildAppPageInterceptLayoutProbes({
+      route: {
+        slots: {
+          modal: {
+            layout: { default: recordingLayout("modal", probed) },
+            loading: { default: () => null },
+          },
+        },
+      },
+      intercept: {
+        interceptBranchSegments: ["(.)photos"],
+        interceptLayouts: [{ default: neverSettlingLayout() }],
+        interceptLayoutSegments: [["(.)photos"]],
+        slotKey: "modal",
+      },
+      isRscRequest: true,
+      sourceParams: {},
+      sourceLoadingTreePositions: [],
+      makeThenableParams: makeThenableParamsLoose,
+    });
+
+    await Promise.all(probes);
+
+    expect(probed).toEqual(["modal"]);
+  });
+
+  it("probes nothing inside a source loading boundary", () => {
+    const layout = { default: neverSettlingLayout() };
+    const probe = (slotKey: string, sourceLoadingTreePositions: number[]) =>
+      buildAppPageInterceptLayoutProbes({
+        route: {
+          layoutTreePositions: [0, 1],
+          routeSegments: ["feed"],
+          slots: { modal: { layout, layoutIndex: 1 } },
+        },
+        intercept: {
+          interceptLayouts: [layout],
+          interceptLayoutSegments: [["(.)photos"]],
+          slotKey,
+        },
+        isRscRequest: true,
+        sourceParams: {},
+        sourceLoadingTreePositions,
+        makeThenableParams: makeThenableParamsLoose,
+      });
+
+    // app/feed/loading.tsx wraps the slot that app/feed/layout.tsx owns.
+    expect(probe("modal", [1])).toEqual([]);
+    // A sibling-page intercept renders in place of the source's page.
+    expect(probe(SIBLING_PAGE_INTERCEPT_SLOT_KEY, [2])).toEqual([]);
+    // A loading boundary below the slot's owner doesn't wrap the slot.
+    expect(probe("modal", [2])).toHaveLength(2);
+  });
+
   it("probes nothing for non-RSC requests", () => {
     const probed: string[] = [];
     expect(
@@ -1106,6 +1202,7 @@ describe("buildAppPageInterceptLayoutProbes", () => {
         intercept: { interceptLayouts: [{ default: recordingLayout("photos", probed) }] },
         isRscRequest: false,
         sourceParams: {},
+        sourceLoadingTreePositions: [],
         makeThenableParams: makeThenableParamsLoose,
       }),
     ).toEqual([]);

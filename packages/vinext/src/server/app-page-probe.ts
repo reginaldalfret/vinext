@@ -296,6 +296,7 @@ type AppPageProbeSlot =
   | Readonly<{
       layout?: AppPageProbeModule;
       layoutIndex?: number;
+      ownerTreePosition?: number | null;
       page?: AppPageProbeModule;
       loading?: AppPageProbeModule;
       loadings?: readonly AppPageProbeModule[] | null;
@@ -317,6 +318,7 @@ type AppPageProbeIntercept =
       interceptLayouts?: readonly AppPageProbeModule[] | null;
       interceptLayoutSegments?: readonly (readonly string[])[] | null;
       interceptLoadings?: readonly AppPageProbeModule[] | null;
+      interceptLoadingTreePositions?: readonly number[] | null;
       matchedParams?: AppPageParams;
       /**
        * Key of the parallel-route slot this interception overrides. At render
@@ -455,15 +457,31 @@ export function buildAppPageInterceptLayoutProbes(options: {
   isRscRequest: boolean;
   /** The source route's params, which the intercepted render passes its tree. */
   sourceParams: AppPageParams;
+  /** Tree positions of the source route's active loading boundaries. */
+  sourceLoadingTreePositions: readonly number[];
   makeThenableParams: (params: unknown) => unknown;
 }): Promise<unknown>[] {
   const intercept = options.isRscRequest ? options.intercept : null;
   if (!intercept) return [];
   const interceptParams = intercept.matchedParams ?? options.sourceParams;
   const branchSegments = intercept.interceptBranchSegments ?? [];
-  const layouts: { layoutModule: AppPageProbeModule; params: AppPageParams }[] = [];
+  const layouts: {
+    layoutModule: AppPageProbeModule;
+    params: AppPageParams;
+    treePosition: number;
+  }[] = [];
+  const loadingTreePositions: number[] = [];
+  for (const [index, loadingModule] of (intercept.interceptLoadings ?? []).entries()) {
+    const treePosition = intercept.interceptLoadingTreePositions?.[index];
+    if (loadingModule?.default && treePosition !== undefined) {
+      loadingTreePositions.push(treePosition);
+    }
+  }
 
   if (intercept.slotKey === SIBLING_PAGE_INTERCEPT_SLOT_KEY) {
+    // The intercepting page and its layouts take the source page's place,
+    // inside every source loading boundary.
+    if (options.sourceLoadingTreePositions.length > 0) return [];
     for (const [index, layoutModule] of (intercept.interceptLayouts ?? []).entries()) {
       const layoutSegments = intercept.interceptLayoutSegments?.[index] ?? [];
       layouts.push({
@@ -473,6 +491,7 @@ export function buildAppPageInterceptLayoutProbes(options: {
           layoutSegments,
           interceptParams,
         ),
+        treePosition: layoutSegments.length,
       });
     }
   } else {
@@ -482,30 +501,52 @@ export function buildAppPageInterceptLayoutProbes(options: {
       const layoutTreePositions = options.route.layoutTreePositions ?? [];
       const targetIndex =
         (slot.layoutIndex ?? -1) >= 0 ? slot.layoutIndex! : layoutTreePositions.length - 1;
+      const targetTreePosition = layoutTreePositions[targetIndex] ?? 0;
+      // A source loading boundary at or above the slot's owner wraps the
+      // whole slot.
+      const ownerTreePosition = slot.ownerTreePosition ?? targetTreePosition;
+      if (options.sourceLoadingTreePositions.some((position) => position <= ownerTreePosition)) {
+        return [];
+      }
+      // Only the slot root's own loading boundary wraps an intercepted slot.
+      const slotLoadings = slot.loadings?.length ? slot.loadings : [slot.loading];
+      const slotLoadingTreePositions = slot.loadingTreePositions?.length
+        ? slot.loadingTreePositions
+        : [0];
+      for (const [index, loadingModule] of slotLoadings.entries()) {
+        if (loadingModule?.default && slotLoadingTreePositions[index] === 0) {
+          loadingTreePositions.push(0);
+        }
+      }
       layouts.push({
         layoutModule: slot.layout,
         params: resolveAppPageSegmentParams(
           options.route.routeSegments,
-          layoutTreePositions[targetIndex] ?? 0,
+          targetTreePosition,
           options.sourceParams,
         ),
+        treePosition: 0,
       });
     }
     for (const [index, layoutModule] of (intercept.interceptLayouts ?? []).entries()) {
+      const treePosition =
+        intercept.interceptLayoutSegments?.[index]?.length ?? branchSegments.length;
       layouts.push({
         layoutModule,
-        params: resolveSlotLayoutParams(
-          branchSegments,
-          intercept.interceptLayoutSegments?.[index]?.length ?? branchSegments.length,
-          interceptParams,
-        ),
+        params: resolveSlotLayoutParams(branchSegments, treePosition, interceptParams),
+        treePosition,
       });
     }
   }
 
-  return layouts.flatMap(({ layoutModule, params }) => {
+  // Like the source's layout probes, stop at the first loading boundary: the
+  // layouts below it stream behind its fallback, after the response headers.
+  const firstLoadingTreePosition = Math.min(...loadingTreePositions);
+  return layouts.flatMap(({ layoutModule, params, treePosition }) => {
     const LayoutComponent = layoutModule?.default;
-    if (typeof LayoutComponent !== "function") return [];
+    if (typeof LayoutComponent !== "function" || treePosition > firstLoadingTreePosition) {
+      return [];
+    }
     return [
       Promise.resolve().then(() =>
         probeReactServerSubtree(

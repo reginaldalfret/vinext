@@ -1539,7 +1539,7 @@ ${responseStageOnly ? "const __responseStageOptions = {" : "const __appRscHandle
       },
       createInterceptSourceProbes(sourceRoute, sourceParams, sourceSearchParams) {
         return {
-          async probeInterceptLayouts() {
+          async probeInterceptLayouts(sourceLoadingTreePositions) {
             const __probeIntercept = findIntercept(
               interceptionPathname,
               interceptionContext,
@@ -1551,6 +1551,7 @@ ${responseStageOnly ? "const __responseStageOptions = {" : "const __appRscHandle
               intercept: __probeIntercept,
               isRscRequest,
               sourceParams,
+              sourceLoadingTreePositions,
               makeThenableParams,
             }));
           },
