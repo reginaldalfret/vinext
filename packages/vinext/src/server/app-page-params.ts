@@ -93,3 +93,21 @@ export function resolveAppPageBranchParams(
   );
   return scopedParams;
 }
+
+/** Params of a layout at `treePosition` in a parallel slot's branch. */
+export function resolveSlotLayoutParams(
+  routeSegments: readonly string[],
+  treePosition: number,
+  params: AppPageParams,
+): AppPageParams {
+  return resolveAppPageBranchParams(routeSegments, treePosition, params);
+}
+
+/** Params of a sibling-page intercepting layout at `layoutSegments`. */
+export function resolveInterceptLayoutParams(
+  branchSegments: readonly string[],
+  layoutSegments: readonly string[],
+  params: AppPageParams,
+): AppPageParams {
+  return resolveAppPageBranchParams(branchSegments, layoutSegments.length, params, layoutSegments);
+}

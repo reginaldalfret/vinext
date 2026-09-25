@@ -14,6 +14,13 @@ import {
 } from "./app-page-execution.js";
 import { makeObservedAppPageSearchParamsThenable } from "./app-page-search-params-observation.js";
 import { isPromiseLike } from "../utils/promise.js";
+import type { AppPageParams } from "./app-page-boundary.js";
+import {
+  resolveAppPageSegmentParams,
+  resolveInterceptLayoutParams,
+  resolveSlotLayoutParams,
+} from "./app-page-params.js";
+import { SIBLING_PAGE_INTERCEPT_SLOT_KEY } from "./app-rsc-route-matching.js";
 
 const DEFAULT_SUBTREE_PROBE_MAX_DEPTH = 32;
 const DEFAULT_SUBTREE_PROBE_MAX_NODES = 1000;
@@ -288,6 +295,7 @@ type AppPageProbeModule = Readonly<{ default?: unknown }> | null | undefined;
 type AppPageProbeSlot =
   | Readonly<{
       layout?: AppPageProbeModule;
+      layoutIndex?: number;
       page?: AppPageProbeModule;
       loading?: AppPageProbeModule;
       loadings?: readonly AppPageProbeModule[] | null;
@@ -297,15 +305,19 @@ type AppPageProbeSlot =
   | undefined;
 
 type AppPageProbeRoute = Readonly<{
+  layoutTreePositions?: readonly number[] | null;
+  routeSegments?: readonly string[] | null;
   slots?: Readonly<Record<string, AppPageProbeSlot>> | null;
 }>;
 
 type AppPageProbeIntercept =
   | Readonly<{
       page?: AppPageProbeModule;
+      interceptBranchSegments?: readonly string[] | null;
       interceptLayouts?: readonly AppPageProbeModule[] | null;
+      interceptLayoutSegments?: readonly (readonly string[])[] | null;
       interceptLoadings?: readonly AppPageProbeModule[] | null;
-      matchedParams?: unknown;
+      matchedParams?: AppPageParams;
       /**
        * Key of the parallel-route slot this interception overrides. At render
        * time the matched route's `slots[slotKey].page` is replaced by the
@@ -434,21 +446,64 @@ export function buildAppPageProbes(options: {
  * slot's own layout and the layouts under the interception marker. A direct
  * intercepted RSC response renders them around the intercepting page, but
  * they aren't among the source route's layouts, so the layout probes don't
- * reach them.
+ * reach them. Each layout gets the params the rendered tree passes it
+ * (app-page-route-wiring.tsx, app-page-element-builder.ts).
  */
 export function buildAppPageInterceptLayoutProbes(options: {
   route: AppPageProbeRoute;
   intercept?: AppPageProbeIntercept;
   isRscRequest: boolean;
-  /** Fallback raw params used when an interception match omits its own. */
-  matchedParams: unknown;
+  /** The source route's params, which the intercepted render passes its tree. */
+  sourceParams: AppPageParams;
   makeThenableParams: (params: unknown) => unknown;
 }): Promise<unknown>[] {
   const intercept = options.isRscRequest ? options.intercept : null;
   if (!intercept) return [];
-  const slot = intercept.slotKey ? options.route.slots?.[intercept.slotKey] : null;
-  const params = options.makeThenableParams(intercept.matchedParams ?? options.matchedParams);
-  return [slot?.layout, ...(intercept.interceptLayouts ?? [])].flatMap((layoutModule) => {
+  const interceptParams = intercept.matchedParams ?? options.sourceParams;
+  const branchSegments = intercept.interceptBranchSegments ?? [];
+  const layouts: { layoutModule: AppPageProbeModule; params: AppPageParams }[] = [];
+
+  if (intercept.slotKey === SIBLING_PAGE_INTERCEPT_SLOT_KEY) {
+    for (const [index, layoutModule] of (intercept.interceptLayouts ?? []).entries()) {
+      const layoutSegments = intercept.interceptLayoutSegments?.[index] ?? [];
+      layouts.push({
+        layoutModule,
+        params: resolveInterceptLayoutParams(
+          intercept.interceptBranchSegments ?? layoutSegments,
+          layoutSegments,
+          interceptParams,
+        ),
+      });
+    }
+  } else {
+    const slot = intercept.slotKey ? options.route.slots?.[intercept.slotKey] : null;
+    if (slot) {
+      // The slot's layout gets its owner layout's params from the source.
+      const layoutTreePositions = options.route.layoutTreePositions ?? [];
+      const targetIndex =
+        (slot.layoutIndex ?? -1) >= 0 ? slot.layoutIndex! : layoutTreePositions.length - 1;
+      layouts.push({
+        layoutModule: slot.layout,
+        params: resolveAppPageSegmentParams(
+          options.route.routeSegments,
+          layoutTreePositions[targetIndex] ?? 0,
+          options.sourceParams,
+        ),
+      });
+    }
+    for (const [index, layoutModule] of (intercept.interceptLayouts ?? []).entries()) {
+      layouts.push({
+        layoutModule,
+        params: resolveSlotLayoutParams(
+          branchSegments,
+          intercept.interceptLayoutSegments?.[index]?.length ?? branchSegments.length,
+          interceptParams,
+        ),
+      });
+    }
+  }
+
+  return layouts.flatMap(({ layoutModule, params }) => {
     const LayoutComponent = layoutModule?.default;
     if (typeof LayoutComponent !== "function") return [];
     return [
@@ -456,7 +511,7 @@ export function buildAppPageInterceptLayoutProbes(options: {
         probeReactServerSubtree(
           createElement(
             LayoutComponent as (props: { params: unknown }) => ReactNode,
-            { params },
+            { params: options.makeThenableParams(params) },
             createElement(Fragment),
           ),
         ),

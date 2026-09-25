@@ -12,6 +12,7 @@ import {
   consumeRenderRequestApiUsage,
   markDynamicUsage,
 } from "../packages/vinext/src/shims/headers.js";
+import { SIBLING_PAGE_INTERCEPT_SLOT_KEY } from "../packages/vinext/src/server/app-rsc-route-matching.js";
 
 // Mirrors makeThenableParams() from app-rsc-entry.ts — the function that
 // converts raw null-prototype params into objects that work with both
@@ -981,7 +982,7 @@ describe("buildAppPageInterceptLayoutProbes", () => {
         slotKey: "modal",
       },
       isRscRequest: true,
-      matchedParams: {},
+      sourceParams: {},
       makeThenableParams: makeThenableParamsLoose,
     });
 
@@ -1006,13 +1007,95 @@ describe("buildAppPageInterceptLayoutProbes", () => {
         ],
       },
       isRscRequest: true,
-      matchedParams: {},
+      sourceParams: {},
       makeThenableParams: makeThenableParamsLoose,
     });
 
     await Promise.all(probes);
 
     expect(consumeDynamicUsage()).toBe(true);
+  });
+
+  // app/[team]/feed/@modal/(.)photos/layout.tsx and
+  // app/[team]/feed/@modal/(.)photos/[id]/layout.tsx
+  it("passes each layout the params its place in the intercepted tree sees", async () => {
+    const received: [string, Record<string, unknown>][] = [];
+    const paramsLayout = (label: string, readsHeadersWithId = false) =>
+      async function Layout(props: {
+        children?: React.ReactNode;
+        params: Promise<Record<string, unknown>>;
+      }) {
+        const params = await props.params;
+        received.push([label, { ...params }]);
+        // Stands in for a headers() call that only a child param triggers.
+        if (readsHeadersWithId && params.id) markDynamicUsage();
+        return props.children;
+      };
+    consumeDynamicUsage();
+
+    const probes = buildAppPageInterceptLayoutProbes({
+      route: {
+        layoutTreePositions: [0, 2],
+        routeSegments: ["[team]", "feed"],
+        slots: { modal: { layout: { default: paramsLayout("modal") }, layoutIndex: 1 } },
+      },
+      intercept: {
+        interceptBranchSegments: ["(.)photos", "[id]"],
+        interceptLayouts: [
+          { default: paramsLayout("photos", true) },
+          { default: paramsLayout("photo") },
+        ],
+        interceptLayoutSegments: [["(.)photos"], ["(.)photos", "[id]"]],
+        matchedParams: { id: "123", team: "acme" },
+        slotKey: "modal",
+      },
+      isRscRequest: true,
+      sourceParams: { team: "acme" },
+      makeThenableParams: makeThenableParamsLoose,
+    });
+
+    await Promise.all(probes);
+
+    expect(received).toEqual([
+      ["modal", { team: "acme" }],
+      ["photos", { team: "acme" }],
+      ["photo", { id: "123", team: "acme" }],
+    ]);
+    expect(consumeDynamicUsage()).toBe(false);
+  });
+
+  // app/[team]/(.)photos/layout.tsx and app/[team]/(.)photos/[id]/layout.tsx
+  it("passes a sibling-page intercept's layouts the params their segments see", async () => {
+    const received: [string, Record<string, unknown>][] = [];
+    const paramsLayout = (label: string) =>
+      async function Layout(props: {
+        children?: React.ReactNode;
+        params: Promise<Record<string, unknown>>;
+      }) {
+        received.push([label, { ...(await props.params) }]);
+        return props.children;
+      };
+
+    const probes = buildAppPageInterceptLayoutProbes({
+      route: { routeSegments: ["[team]", "feed"] },
+      intercept: {
+        interceptBranchSegments: ["(.)photos", "[id]"],
+        interceptLayouts: [{ default: paramsLayout("photos") }, { default: paramsLayout("photo") }],
+        interceptLayoutSegments: [["(.)photos"], ["(.)photos", "[id]"]],
+        matchedParams: { id: "123", team: "acme" },
+        slotKey: SIBLING_PAGE_INTERCEPT_SLOT_KEY,
+      },
+      isRscRequest: true,
+      sourceParams: { team: "acme" },
+      makeThenableParams: makeThenableParamsLoose,
+    });
+
+    await Promise.all(probes);
+
+    expect(received).toEqual([
+      ["photos", { team: "acme" }],
+      ["photo", { id: "123", team: "acme" }],
+    ]);
   });
 
   it("probes nothing for non-RSC requests", () => {
@@ -1022,7 +1105,7 @@ describe("buildAppPageInterceptLayoutProbes", () => {
         route: {},
         intercept: { interceptLayouts: [{ default: recordingLayout("photos", probed) }] },
         isRscRequest: false,
-        matchedParams: {},
+        sourceParams: {},
         makeThenableParams: makeThenableParamsLoose,
       }),
     ).toEqual([]);

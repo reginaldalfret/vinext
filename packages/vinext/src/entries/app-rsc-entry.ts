@@ -1550,7 +1550,7 @@ ${responseStageOnly ? "const __responseStageOptions = {" : "const __appRscHandle
               route: sourceRoute,
               intercept: __probeIntercept,
               isRscRequest,
-              matchedParams: params,
+              sourceParams,
               makeThenableParams,
             }));
           },

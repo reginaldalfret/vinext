@@ -46,9 +46,9 @@ import {
   type AppRenderDependency,
 } from "./app-render-dependency.js";
 import {
-  resolveAppPageBranchParams,
   resolveAppPageSegmentParamScopeKeys,
   resolveAppPageSegmentParams,
+  resolveSlotLayoutParams,
 } from "./app-page-params.js";
 import { probeReactServerSubtree } from "./app-page-probe.js";
 import {
@@ -86,14 +86,6 @@ const APP_PAGE_SLOT_SEGMENT_KEY = "(__SLOT__)";
 const APP_PAGE_LAYOUT_PROBE_CHILD = <Fragment />;
 const DEFAULT_GLOBAL_ERROR_COMPONENT = DefaultGlobalError as AppPageErrorComponent;
 const DEFAULT_NOT_FOUND_COMPONENT = DefaultNotFound as AppPageComponent;
-
-function resolveSlotLayoutParams(
-  routeSegments: readonly string[],
-  treePosition: number,
-  params: AppPageParams,
-): AppPageParams {
-  return resolveAppPageBranchParams(routeSegments, treePosition, params);
-}
 
 export type AppPageModule = Record<string, unknown> & {
   default?: AppPageComponent | null | undefined;

@@ -48,7 +48,11 @@ import {
   makeObservedAppPageSearchParamsThenable,
 } from "./app-page-search-params-observation.js";
 import { shouldServeStreamingMetadata } from "./streaming-metadata.js";
-import { resolveAppPageBranchParams, resolveAppPageSegmentParams } from "./app-page-params.js";
+import {
+  resolveAppPageBranchParams,
+  resolveAppPageSegmentParams,
+  resolveInterceptLayoutParams,
+} from "./app-page-params.js";
 import {
   createAppPageRenderDependency,
   invokeAppComponent,
@@ -59,14 +63,6 @@ import {
 } from "./app-render-dependency.js";
 import { isPromiseLike } from "../utils/promise.js";
 import { APP_PAGE_INTERCEPTION_MARKER_TRAVERSALS } from "./app-page-interception-markers.js";
-
-function resolveInterceptLayoutParams(
-  branchSegments: readonly string[],
-  layoutSegments: readonly string[],
-  params: AppPageParams,
-): AppPageParams {
-  return resolveAppPageBranchParams(branchSegments, layoutSegments.length, params, layoutSegments);
-}
 
 function traceAppPageLayoutModules(
   modules: readonly (AppPageModule | null | undefined)[],
