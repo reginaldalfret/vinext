@@ -847,6 +847,11 @@ async function renderAppPageLifecycleImpl(
     (): boolean =>
       options.consumeDynamicUsage() || (readsRenderDynamicLatch && isRenderDynamicLatched()),
   );
+  // Deferred finalization can also consume the render's observations from
+  // outside its request scope, such as a disconnecting client's cancel.
+  const consumeRenderObservationState =
+    options.consumeRenderObservationState &&
+    bindRequestContext(options.consumeRenderObservationState);
   const peekRenderDynamicUsage = (): boolean =>
     (options.peekDynamicUsage?.() ?? peekDynamicUsage()) ||
     (readsRenderDynamicLatch && isRenderDynamicLatched());
@@ -1175,7 +1180,7 @@ async function renderAppPageLifecycleImpl(
       bypassInterceptionContextCache: options.bypassInterceptionContextCache,
       cleanPathname: options.cleanPathname,
       consumeDynamicUsage: finalizeRenderDynamicUsage,
-      consumeRenderObservationState: options.consumeRenderObservationState,
+      consumeRenderObservationState,
       createRscRenderObservation(input) {
         return createAppPageRenderObservation({
           boundaryOutcome: { kind: "success" },
@@ -1538,7 +1543,7 @@ async function renderAppPageLifecycleImpl(
       cleanPathname: options.cleanPathname,
       clientTraceMetadataMarker,
       consumeDynamicUsage: consumeRenderDynamicUsage,
-      consumeRenderObservationState: options.consumeRenderObservationState,
+      consumeRenderObservationState,
       createHtmlRenderObservation(input) {
         return createAppPageRenderObservation({
           boundaryOutcome: { kind: "success" },
@@ -1607,7 +1612,7 @@ async function renderAppPageLifecycleImpl(
       return dynamicUsedBeforeContextCleanup;
     },
     consumeDynamicUsage: consumeRenderDynamicUsage,
-    consumeRenderObservationState: options.consumeRenderObservationState,
+    consumeRenderObservationState,
     getPageTags() {
       return options.getPageTags();
     },
