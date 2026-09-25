@@ -819,7 +819,10 @@ import {
   resolveAppPageChildSegments as __resolveAppPageChildSegments,
 } from ${JSON.stringify(appPageRouteWiringPath)};
 import { buildPageElements as __buildPageElements } from ${JSON.stringify(appPageElementBuilderPath)};
-import { buildAppPageProbes as __buildAppPageProbes } from ${JSON.stringify(appPageProbePath)};
+import {
+  buildAppPageInterceptLayoutProbes as __buildAppPageInterceptLayoutProbes,
+  buildAppPageProbes as __buildAppPageProbes,
+} from ${JSON.stringify(appPageProbePath)};
 import {
   dispatchAppPage as __dispatchAppPage,
 } from ${JSON.stringify(appPageDispatchPath)};
@@ -881,7 +884,7 @@ import { suppressHookWarningAls } from ${JSON.stringify(appHookWarningSuppressio
 import { clearAppRequestContext as __clearRequestContext, setAppNavigationContext as setNavigationContext } from ${JSON.stringify(appRequestContextPath)};
 __configureMemoryCacheHandler({ cacheMaxMemorySize: ${JSON.stringify(cacheMaxMemorySize)} });
 import { createAppPrerenderStaticParamsResolver as __createAppPrerenderStaticParamsResolver } from ${JSON.stringify(appPrerenderStaticParamsPath)};
-import { ensureAppRouteModulesLoaded as __ensureRouteLoaded, loadAppInterceptPage as __loadAppInterceptPage } from ${JSON.stringify(appRouteModuleLoaderPath)};
+import { ensureAppRouteModulesLoaded as __ensureRouteLoaded, loadAppInterceptLayouts as __loadAppInterceptLayouts, loadAppInterceptPage as __loadAppInterceptPage } from ${JSON.stringify(appRouteModuleLoaderPath)};
 import {
   getRenderedConcreteUrlPathsForRoute as __getRenderedConcreteUrlPathsForRoute,
   initPregeneratedPathsFromGlobals as __initPregeneratedPathsFromGlobals,
@@ -1536,6 +1539,21 @@ ${responseStageOnly ? "const __responseStageOptions = {" : "const __appRscHandle
       },
       createInterceptSourceProbes(sourceRoute, sourceParams, sourceSearchParams) {
         return {
+          async probeInterceptLayouts() {
+            const __probeIntercept = findIntercept(
+              interceptionPathname,
+              interceptionContext,
+              interceptionId,
+            );
+            if (__probeIntercept) await __loadAppInterceptLayouts(__probeIntercept);
+            return Promise.all(__buildAppPageInterceptLayoutProbes({
+              route: sourceRoute,
+              intercept: __probeIntercept,
+              isRscRequest,
+              matchedParams: params,
+              makeThenableParams,
+            }));
+          },
           probeLayoutAt(li) {
             return __probeAppPageLayoutWithTracking({
               layoutIndex: li,

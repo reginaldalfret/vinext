@@ -423,6 +423,8 @@ export type DispatchAppPageOptions<TRoute extends AppPageDispatchRoute> = {
     params: AppPageParams,
     searchParams: URLSearchParams,
   ) => {
+    /** The intercepting branch's layouts, which the source's layouts don't include. */
+    probeInterceptLayouts?: () => unknown;
     probeLayoutAt: (layoutIndex: number) => unknown;
     probePage: () => unknown;
   };
@@ -740,6 +742,18 @@ async function probeAppPageInterceptSourceDynamicUsage<TRoute extends AppPageDis
       return options.runWithSuppressedHookWarning(probe);
     },
   });
+  if (probes.probeInterceptLayouts) {
+    await probeAppPageComponent({
+      awaitAsyncResult: true,
+      async onError() {
+        return null;
+      },
+      probePage: probes.probeInterceptLayouts,
+      runWithSuppressedHookWarning(probe) {
+        return options.runWithSuppressedHookWarning(probe);
+      },
+    });
+  }
   if (loadingTreePositions.length === 0) {
     await probeAppPageComponent({
       awaitAsyncResult: true,

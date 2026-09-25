@@ -1325,7 +1325,7 @@ describe("App Router entry templates", () => {
       code.match(
         /findIntercept\(\s*interceptionPathname,\s*interceptionContext,\s*interceptionId,?\s*\)/g,
       ),
-    ).toHaveLength(4);
+    ).toHaveLength(5);
     expect(code).toContain("const route = routes[intercept.sourceRouteIndex]");
     expect(code).toContain("intercept.sourceMatchedParams");
   });

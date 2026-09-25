@@ -95,6 +95,8 @@ describe("generateRscEntry ISR code generation", () => {
         return __resolveRouteRevalidateSeconds(targetRoute, intercept);
       },`);
     expect(code).toContain("const tree = __resolveRouteInterceptTree(route, intercept);");
+    // The direct intercept probes also run the intercepting branch's layouts.
+    expect(code).toContain("return Promise.all(__buildAppPageInterceptLayoutProbes({");
     expect(code).toContain(`  return __isAppPageStaticEligible({
     ...__resolveRouteStaticGeneration(effectiveRoute, segmentConfigBranches),
     dynamicConfig: segmentConfig.dynamicConfig,

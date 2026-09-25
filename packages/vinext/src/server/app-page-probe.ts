@@ -1,4 +1,4 @@
-import { Fragment, isValidElement, type ReactElement, type ReactNode } from "react";
+import { createElement, Fragment, isValidElement, type ReactElement, type ReactNode } from "react";
 import {
   markAppPagePropsForUseCache,
   withUseCachePageMarker,
@@ -287,6 +287,7 @@ type AppPageProbeModule = Readonly<{ default?: unknown }> | null | undefined;
 
 type AppPageProbeSlot =
   | Readonly<{
+      layout?: AppPageProbeModule;
       page?: AppPageProbeModule;
       loading?: AppPageProbeModule;
       loadings?: readonly AppPageProbeModule[] | null;
@@ -302,6 +303,7 @@ type AppPageProbeRoute = Readonly<{
 type AppPageProbeIntercept =
   | Readonly<{
       page?: AppPageProbeModule;
+      interceptLayouts?: readonly AppPageProbeModule[] | null;
       interceptLoadings?: readonly AppPageProbeModule[] | null;
       matchedParams?: unknown;
       /**
@@ -425,6 +427,42 @@ export function buildAppPageProbes(options: {
   }
 
   return probes.map((probe) => Promise.resolve(probe));
+}
+
+/**
+ * Probes the layouts of an active interception's branch: the intercepted
+ * slot's own layout and the layouts under the interception marker. A direct
+ * intercepted RSC response renders them around the intercepting page, but
+ * they aren't among the source route's layouts, so the layout probes don't
+ * reach them.
+ */
+export function buildAppPageInterceptLayoutProbes(options: {
+  route: AppPageProbeRoute;
+  intercept?: AppPageProbeIntercept;
+  isRscRequest: boolean;
+  /** Fallback raw params used when an interception match omits its own. */
+  matchedParams: unknown;
+  makeThenableParams: (params: unknown) => unknown;
+}): Promise<unknown>[] {
+  const intercept = options.isRscRequest ? options.intercept : null;
+  if (!intercept) return [];
+  const slot = intercept.slotKey ? options.route.slots?.[intercept.slotKey] : null;
+  const params = options.makeThenableParams(intercept.matchedParams ?? options.matchedParams);
+  return [slot?.layout, ...(intercept.interceptLayouts ?? [])].flatMap((layoutModule) => {
+    const LayoutComponent = layoutModule?.default;
+    if (typeof LayoutComponent !== "function") return [];
+    return [
+      Promise.resolve().then(() =>
+        probeReactServerSubtree(
+          createElement(
+            LayoutComponent as (props: { params: unknown }) => ReactNode,
+            { params },
+            createElement(Fragment),
+          ),
+        ),
+      ),
+    ];
+  });
 }
 
 type ProbeAppPageBeforeRenderResult = {

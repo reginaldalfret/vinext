@@ -3022,6 +3022,25 @@ describe("app page dispatch", () => {
       );
     });
 
+    it("sends the never-cache header for an intercepting layout that reads a dynamic API", async () => {
+      // app/feed/@modal/(.)photos/layout.tsx calls headers(); it isn't among
+      // the source's layouts.
+      const response = await dispatchIntercept({
+        createInterceptSourceProbes: () => ({
+          probeInterceptLayouts() {
+            markDynamicUsage();
+          },
+          probeLayoutAt() {},
+          probePage() {},
+        }),
+      });
+
+      await expect(response.text()).resolves.toBe("/feed");
+      expect(response.headers.get("cache-control")).toBe(
+        "private, no-cache, no-store, max-age=0, must-revalidate",
+      );
+    });
+
     it("doesn't count dynamic API reads from before the source is probed", async () => {
       const response = await dispatchIntercept({
         createInterceptSourceProbes: () => ({ probeLayoutAt() {}, probePage() {} }),

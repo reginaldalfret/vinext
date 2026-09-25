@@ -1,6 +1,7 @@
 import React from "react";
 import { describe, expect, it, vi } from "vite-plus/test";
 import {
+  buildAppPageInterceptLayoutProbes,
   buildAppPageProbes,
   probeAppPage,
   probeAppPageBeforeRender,
@@ -9,6 +10,7 @@ import {
 import {
   consumeDynamicUsage,
   consumeRenderRequestApiUsage,
+  markDynamicUsage,
 } from "../packages/vinext/src/shims/headers.js";
 
 // Mirrors makeThenableParams() from app-rsc-entry.ts — the function that
@@ -950,5 +952,79 @@ describe("buildAppPageProbes", () => {
 
     expect(receivedParams).toHaveLength(1);
     expect(await (receivedParams[0] as Promise<Record<string, unknown>>)).toEqual(fallbackParams);
+  });
+});
+
+describe("buildAppPageInterceptLayoutProbes", () => {
+  const makeThenableParamsLoose = (params: unknown): unknown =>
+    makeThenableParams((params ?? {}) as Record<string, unknown>);
+
+  function recordingLayout(label: string, sink: string[]) {
+    return function Layout(props: { children?: React.ReactNode; params: unknown }) {
+      sink.push(label);
+      return props.children;
+    };
+  }
+
+  it("probes the intercepted slot's layout and the intercepting branch's layouts", async () => {
+    const probed: string[] = [];
+    const probes = buildAppPageInterceptLayoutProbes({
+      route: {
+        slots: {
+          modal: { layout: { default: recordingLayout("modal", probed) } },
+          sidebar: { layout: { default: recordingLayout("sidebar", probed) } },
+        },
+      },
+      intercept: {
+        interceptLayouts: [{ default: recordingLayout("photos", probed) }, null],
+        matchedParams: { id: "123" },
+        slotKey: "modal",
+      },
+      isRscRequest: true,
+      matchedParams: {},
+      makeThenableParams: makeThenableParamsLoose,
+    });
+
+    await Promise.all(probes);
+
+    expect(probed).toEqual(["modal", "photos"]);
+  });
+
+  it("records an intercepting layout's dynamic API read", async () => {
+    consumeDynamicUsage();
+    const probes = buildAppPageInterceptLayoutProbes({
+      route: {},
+      intercept: {
+        interceptLayouts: [
+          {
+            default: function Layout(props: { children?: React.ReactNode }) {
+              // Stands in for headers() or cookies().
+              markDynamicUsage();
+              return props.children;
+            },
+          },
+        ],
+      },
+      isRscRequest: true,
+      matchedParams: {},
+      makeThenableParams: makeThenableParamsLoose,
+    });
+
+    await Promise.all(probes);
+
+    expect(consumeDynamicUsage()).toBe(true);
+  });
+
+  it("probes nothing for non-RSC requests", () => {
+    const probed: string[] = [];
+    expect(
+      buildAppPageInterceptLayoutProbes({
+        route: {},
+        intercept: { interceptLayouts: [{ default: recordingLayout("photos", probed) }] },
+        isRscRequest: false,
+        matchedParams: {},
+        makeThenableParams: makeThenableParamsLoose,
+      }),
+    ).toEqual([]);
   });
 });
