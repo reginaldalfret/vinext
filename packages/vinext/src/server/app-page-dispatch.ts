@@ -1042,6 +1042,9 @@ async function dispatchAppPageInner<TRoute extends AppPageDispatchRoute>(
 
   let interceptDynamicConfig: string | null | undefined;
   let interceptDynamicConfigResolved = false;
+  // Whether the source route that the intercepted response renders is
+  // force-dynamic or revalidate = 0, from the config activated for its render.
+  let isInterceptSourceKnownDynamic = false;
   const interceptResult = await resolveAppPageIntercept<
     TRoute,
     unknown,
@@ -1078,8 +1081,12 @@ async function dispatchAppPageInner<TRoute extends AppPageDispatchRoute>(
       } else {
         setHeadersContext(requestHeadersContext);
       }
+      const sourceRevalidateSeconds =
+        options.resolveRouteRevalidateSeconds?.(interceptRoute) ?? null;
+      isInterceptSourceKnownDynamic =
+        sourceDynamicConfig === "force-dynamic" || sourceRevalidateSeconds === 0;
       setCurrentFetchCacheMode(options.resolveRouteFetchCacheMode?.(interceptRoute) ?? null);
-      setCurrentFetchRevalidate(options.resolveRouteRevalidateSeconds?.(interceptRoute) ?? null);
+      setCurrentFetchRevalidate(sourceRevalidateSeconds);
       setCurrentForceDynamicFetchDefault(sourceDynamicConfig === "force-dynamic");
       return options.buildPageElement(
         interceptRoute,
@@ -1125,10 +1132,10 @@ async function dispatchAppPageInner<TRoute extends AppPageDispatchRoute>(
         Vary: VINEXT_RSC_VARY_HEADER,
       });
       // This response renders the source route with the intercepting branch,
-      // so it takes that tree's cacheability, not the matched target's. A tree
-      // that can't be static, a render known dynamic before it starts, or a
-      // draft-mode request is never cacheable, like the route's own render.
-      // Middleware's policy still wins, merged after, as in the RSC builder.
+      // so it takes that tree's cacheability and the source's dynamic config,
+      // not the matched target's. A render known dynamic before it starts is
+      // never cacheable, like the source's own render. Middleware's policy
+      // still wins, merged after, as in the RSC builder.
       const isSourceStaticEligible =
         options.pprRuntime !== undefined ||
         options.resolveRouteStaticEligible(sourceRoute, {
@@ -1139,12 +1146,7 @@ async function dispatchAppPageInner<TRoute extends AppPageDispatchRoute>(
           interceptSlotKey: interceptOpts.interceptSlotKey,
           interceptedRoute: route,
         });
-      if (
-        !isSourceStaticEligible ||
-        isDraftMode ||
-        isForceDynamic ||
-        currentRevalidateSeconds === 0
-      ) {
+      if (!isSourceStaticEligible || isDraftMode || isInterceptSourceKnownDynamic) {
         interceptHeaders.set("Cache-Control", resolveUncacheableCacheControl(options.isProduction));
       }
       mergeMiddlewareResponseHeaders(interceptHeaders, options.middlewareContext.headers);
