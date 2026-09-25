@@ -81,6 +81,10 @@ describe("generateRscEntry ISR code generation", () => {
     expect(code).toContain(
       `slotIndex: Object.keys(route.slots ?? {}).indexOf(intercept.interceptSlotKey),`,
     );
+    // A sibling-page intercept is told apart from a slot the source lacks.
+    expect(code).toContain(
+      "isSiblingPageIntercept: intercept.interceptSlotKey === __SIBLING_PAGE_INTERCEPT_SLOT_KEY,",
+    );
     expect(code).toContain("const effectiveRoute = tree ? { ...route, ...tree } : route;");
     expect(code).toContain(`  return __isAppPageStaticEligible({
     ...__resolveRouteStaticGeneration(effectiveRoute, segmentConfigBranches),

@@ -1032,6 +1032,7 @@ function __resolveRouteStaticEligible(route, intercept) {
         interceptLayoutSegments: intercept.interceptLayoutSegments,
         interceptLayouts: intercept.interceptLayouts,
         interceptPage: intercept.interceptPage,
+        isSiblingPageIntercept: intercept.interceptSlotKey === __SIBLING_PAGE_INTERCEPT_SLOT_KEY,
         layouts: route.layouts,
         layoutTreePositions: route.layoutTreePositions,
         page: route.page,

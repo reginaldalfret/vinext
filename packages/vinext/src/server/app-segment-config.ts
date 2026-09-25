@@ -532,6 +532,8 @@ export type AppPageSegmentConfigTree = Pick<
  *
  * - A slot intercept replaces the intercepted slot's branch. vinext still
  *   renders the source's page as children, so it stays.
+ * - A slot intercept whose slot the source route doesn't have renders nothing
+ *   in its place: vinext renders the source route unchanged, so its tree stays.
  * - A sibling-page intercept replaces the source's page: its folders, layouts
  *   and page continue the main tree below the source page's folder.
  * https://github.com/vercel/next.js/blob/v16.2.7/crates/next-core/src/app_structure.rs#L1270-L1290
@@ -542,6 +544,8 @@ export function resolveAppPageInterceptTree(
     interceptLayoutSegments?: readonly (readonly string[])[] | null;
     interceptLayouts?: readonly (AppRouteSegmentConfigModule | null | undefined)[] | null;
     interceptPage?: AppRouteSegmentConfigModule | null;
+    /** Whether the intercept replaces the source's page rather than a slot. */
+    isSiblingPageIntercept: boolean;
     /** Index of the intercepted slot's branch in `parallelBranches`, or -1. */
     slotIndex: number;
   },
@@ -558,8 +562,9 @@ export function resolveAppPageInterceptTree(
     parallelBranches: options.parallelBranches,
     routeSegments: options.routeSegments,
   };
-  const slot = options.slotIndex === -1 ? null : options.parallelBranches?.[options.slotIndex];
-  if (slot) {
+  if (!options.isSiblingPageIntercept) {
+    const slot = options.slotIndex === -1 ? null : options.parallelBranches?.[options.slotIndex];
+    if (!slot) return tree;
     const parallelBranches = [...(options.parallelBranches ?? [])];
     parallelBranches[options.slotIndex] = {
       configLayouts: interceptLayouts,

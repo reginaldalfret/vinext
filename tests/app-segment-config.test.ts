@@ -1051,6 +1051,7 @@ describe("resolveAppPageInterceptTree", () => {
       page: options.sourcePage ?? {},
       parallelBranches: [modalDefault],
       routeSegments,
+      isSiblingPageIntercept: options.slotIndex === -1,
       slotIndex: options.slotIndex ?? 0,
     });
     const config = resolveAppPageSegmentConfig(tree);
@@ -1080,6 +1081,7 @@ describe("resolveAppPageInterceptTree", () => {
       page: sourcePage,
       parallelBranches: [modalDefault],
       routeSegments,
+      isSiblingPageIntercept: false,
       slotIndex: 0,
     });
     expect(tree.page).toBe(sourcePage);
@@ -1111,6 +1113,7 @@ describe("resolveAppPageInterceptTree", () => {
       page: { dynamic: "force-static" },
       parallelBranches: [modalDefault],
       routeSegments,
+      isSiblingPageIntercept: true,
       slotIndex: -1,
     });
     expect(tree).toEqual({
@@ -1121,6 +1124,26 @@ describe("resolveAppPageInterceptTree", () => {
       parallelBranches: [modalDefault],
       routeSegments: ["feed", "(.)photos", "[id]"],
     });
+  });
+
+  it("keeps the source's tree when the source route lacks the intercepted slot", () => {
+    // A route-group variant of app/feed matched as the source has no @modal,
+    // so the intercepting page doesn't render and the dynamic source page does.
+    const sourcePage = { dynamic: "force-dynamic" };
+    const tree = resolveAppPageInterceptTree({
+      interceptBranchSegments: ["(.)photos", "[id]"],
+      interceptPage: {},
+      isSiblingPageIntercept: false,
+      layouts,
+      layoutTreePositions,
+      page: sourcePage,
+      parallelBranches: [],
+      routeSegments,
+      slotIndex: -1,
+    });
+    expect(tree.page).toBe(sourcePage);
+    expect(tree.routeSegments).toEqual(routeSegments);
+    expect(resolveAppPageSegmentConfig(tree).dynamicConfig).toBe("force-dynamic");
   });
 
   it("keeps a static intercepting branch static", () => {
@@ -1150,7 +1173,11 @@ describe("resolveAppPageInterceptTree", () => {
     expect(
       classify(
         {},
-        { isDynamicRoute: true, slotIndex: -1, sourcePage: { dynamic: "force-static" } },
+        {
+          isDynamicRoute: true,
+          slotIndex: -1,
+          sourcePage: { dynamic: "force-static" },
+        },
       ),
     ).toBe(false);
   });
@@ -1167,6 +1194,7 @@ describe("resolveAppPageInterceptTree", () => {
       page: { generateStaticParams: () => [] },
       parallelBranches: [],
       routeSegments: ["u", "[user]"],
+      isSiblingPageIntercept: true,
       slotIndex: -1,
     });
     expect(hasAppPageGenerateStaticParamsAtLastDynamicSegment(tree)).toBe(false);
