@@ -81,12 +81,11 @@ describe("generateRscEntry ISR code generation", () => {
     expect(code).toContain(
       `slotIndex: Object.keys(route.slots ?? {}).indexOf(intercept.interceptSlotKey),`,
     );
+    expect(code).toContain("const effectiveRoute = tree ? { ...route, ...tree } : route;");
     expect(code).toContain(`  return __isAppPageStaticEligible({
-    ...staticGeneration,
+    ...__resolveRouteStaticGeneration(effectiveRoute, segmentConfigBranches),
     dynamicConfig: segmentConfig.dynamicConfig,
     isDynamicRoute: route.isDynamic || !!intercept?.interceptedRoute.isDynamic,
-    isStaticGenerationEdgeRuntime:
-      staticGeneration.isStaticGenerationEdgeRuntime || __isEdgeRuntime(resolvedIntercept?.runtime),
     revalidateSeconds: segmentConfig.revalidateSeconds,
   });`);
   });

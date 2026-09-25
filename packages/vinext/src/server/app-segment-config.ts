@@ -516,53 +516,75 @@ function mergeParallelRuntime(
 }
 
 /**
- * A direct intercepted RSC response renders the source route with the
- * intercepting branch in the slot it intercepts. Next.js serves it from the
- * intercepting route, an app path of its own whose loader tree holds the
- * source's layouts and that branch, and classifies that tree. This returns the
- * source's branches with the intercepting branch in place of the intercepted
- * slot's (a sibling-page intercept has no slot, so its branch is added), and
- * the branch's own `runtime`, which Next.js merges into the route's.
- * https://github.com/vercel/next.js/blob/v16.2.7/crates/next-core/src/segment_config.rs#L1323-L1357
+ * The modules and shape of an App page's loader tree, as the static
+ * generation helpers read it.
  */
-export function resolveAppPageInterceptSegmentConfigBranches(options: {
-  branches: readonly ParallelAppPageSegmentConfigBranch[];
-  interceptBranchSegments?: readonly string[] | null;
-  interceptLayoutSegments?: readonly (readonly string[])[] | null;
-  interceptLayouts?: readonly (AppRouteSegmentConfigModule | null | undefined)[] | null;
-  interceptPage?: AppRouteSegmentConfigModule | null;
-  /** Index of the intercepted slot's branch in `branches`, or -1. */
-  slotIndex: number;
-  /** The source route's page position, which owns a sibling-page intercept. */
-  sourcePageTreePosition: number;
-}): {
-  branches: ParallelAppPageSegmentConfigBranch[];
-  runtime: EffectiveAppPageSegmentConfig["runtime"];
-} {
-  const slot = options.slotIndex === -1 ? null : options.branches[options.slotIndex];
+export type AppPageSegmentConfigTree = Pick<
+  ResolveAppPageSegmentConfigOptions,
+  "layoutTreePositions" | "layouts" | "page" | "parallelBranches" | "routeSegments"
+> & { childrenSlot?: AppPageChildrenSlot | null };
+
+/**
+ * A direct intercepted RSC response renders the source route with the
+ * intercepting branch in place of what it intercepts. Next.js serves it from
+ * the intercepting route, an app path of its own whose loader tree holds the
+ * source's layouts and that branch, and classifies that tree.
+ *
+ * - A slot intercept replaces the intercepted slot's branch. vinext still
+ *   renders the source's page as children, so it stays.
+ * - A sibling-page intercept replaces the source's page: its folders, layouts
+ *   and page continue the main tree below the source page's folder.
+ * https://github.com/vercel/next.js/blob/v16.2.7/crates/next-core/src/app_structure.rs#L1270-L1290
+ */
+export function resolveAppPageInterceptTree(
+  options: AppPageSegmentConfigTree & {
+    interceptBranchSegments?: readonly string[] | null;
+    interceptLayoutSegments?: readonly (readonly string[])[] | null;
+    interceptLayouts?: readonly (AppRouteSegmentConfigModule | null | undefined)[] | null;
+    interceptPage?: AppRouteSegmentConfigModule | null;
+    /** Index of the intercepted slot's branch in `parallelBranches`, or -1. */
+    slotIndex: number;
+  },
+): AppPageSegmentConfigTree {
   const interceptLayouts = options.interceptLayouts ?? [];
-  const interceptBranch: ParallelAppPageSegmentConfigBranch = {
-    configLayouts: interceptLayouts,
-    configLayoutTreePositions: interceptLayouts.map(
-      (_, index) => options.interceptLayoutSegments?.[index]?.length ?? 0,
-    ),
-    isDefault: false,
-    layout: slot?.layout ?? null,
-    name: slot?.name ?? "children",
-    ownerTreePosition: slot ? slot.ownerTreePosition : options.sourcePageTreePosition,
-    page: options.interceptPage ?? null,
-    routeSegments: options.interceptBranchSegments ?? [],
+  const interceptLayoutDepths = interceptLayouts.map(
+    (_, index) => options.interceptLayoutSegments?.[index]?.length ?? 0,
+  );
+  const tree: AppPageSegmentConfigTree = {
+    childrenSlot: options.childrenSlot,
+    layoutTreePositions: options.layoutTreePositions,
+    layouts: options.layouts,
+    page: options.page,
+    parallelBranches: options.parallelBranches,
+    routeSegments: options.routeSegments,
   };
-  const branches = [...options.branches];
-  if (slot) branches[options.slotIndex] = interceptBranch;
-  else branches.push(interceptBranch);
+  const slot = options.slotIndex === -1 ? null : options.parallelBranches?.[options.slotIndex];
+  if (slot) {
+    const parallelBranches = [...(options.parallelBranches ?? [])];
+    parallelBranches[options.slotIndex] = {
+      configLayouts: interceptLayouts,
+      configLayoutTreePositions: interceptLayoutDepths,
+      isDefault: false,
+      layout: slot.layout ?? null,
+      name: slot.name,
+      ownerTreePosition: slot.ownerTreePosition,
+      page: options.interceptPage ?? null,
+      routeSegments: options.interceptBranchSegments ?? [],
+    };
+    return { ...tree, parallelBranches };
+  }
+  const routeSegments = options.routeSegments ?? [];
+  const layouts = options.layouts ?? [];
   return {
-    branches,
-    runtime: resolveAppPageStaticGenerationRuntime([
-      interceptBranch.layout?.runtime,
-      ...interceptLayouts.map((layout) => layout?.runtime),
-      interceptBranch.page?.runtime,
-    ]),
+    ...tree,
+    childrenSlot: null,
+    layoutTreePositions: [
+      ...layouts.map((_, index) => options.layoutTreePositions?.[index] ?? 0),
+      ...interceptLayoutDepths.map((depth) => routeSegments.length + depth),
+    ],
+    layouts: [...layouts, ...interceptLayouts],
+    page: options.interceptPage ?? null,
+    routeSegments: [...routeSegments, ...(options.interceptBranchSegments ?? [])],
   };
 }
 
