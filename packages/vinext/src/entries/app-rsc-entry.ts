@@ -1509,6 +1509,37 @@ ${responseStageOnly ? "const __responseStageOptions = {" : "const __appRscHandle
           makeThenableParams,
         }));
       },
+      createInterceptSourceProbes(sourceRoute, sourceParams, sourceSearchParams) {
+        return {
+          probeLayoutAt(li) {
+            return __probeAppPageLayoutWithTracking({
+              layoutIndex: li,
+              layoutParamAccess: undefined,
+              makeThenableParams,
+              matchedParams: sourceParams,
+              route: sourceRoute,
+            });
+          },
+          async probePage() {
+            const __probeIntercept = findIntercept(
+              interceptionPathname,
+              interceptionContext,
+              interceptionId,
+            );
+            if (__probeIntercept) await __loadAppInterceptPage(__probeIntercept);
+            return Promise.all(__buildAppPageProbes({
+              route: sourceRoute,
+              pageComponent: sourceRoute.page?.default,
+              asyncRouteParams: makeThenableParams(sourceParams),
+              searchParams: sourceSearchParams,
+              intercept: __probeIntercept,
+              isRscRequest,
+              matchedParams: params,
+              makeThenableParams,
+            }));
+          },
+        };
+      },
       renderErrorBoundaryPage(renderErr, errorOrigin) {
         const __activeIntercept = findIntercept(
           interceptionPathname,

@@ -44,6 +44,8 @@ import {
 } from "./app-page-boundary.js";
 import {
   buildAppPageSpecialErrorResponse,
+  probeAppPageComponent,
+  probeAppPageLayouts,
   probeAppPageThrownError,
   resolveAppPageSpecialError,
   type AppPageFontPreload,
@@ -411,6 +413,19 @@ export type DispatchAppPageOptions<TRoute extends AppPageDispatchRoute> = {
   rootParams?: RootParams;
   probeLayoutAt: (layoutIndex: number, layoutParamAccess?: AppLayoutParamAccessTracker) => unknown;
   probePage: (searchParams?: URLSearchParams) => unknown;
+  /**
+   * Layout and page probes for the source route that a direct intercepted RSC
+   * response renders, including its intercepting page, like `probeLayoutAt`
+   * and `probePage` for the matched route.
+   */
+  createInterceptSourceProbes?: (
+    route: TRoute,
+    params: AppPageParams,
+    searchParams: URLSearchParams,
+  ) => {
+    probeLayoutAt: (layoutIndex: number) => unknown;
+    probePage: () => unknown;
+  };
   expireSeconds?: number;
   renderErrorBoundaryPage: (
     error: unknown,
@@ -666,6 +681,49 @@ function toInterceptOptions(
     interceptTargetPatternParts: intercept.targetPatternParts ?? null,
     interceptTargetRouteGraphId: intercept.targetRouteGraphId ?? null,
   };
+}
+
+/**
+ * Probe the source route that a direct intercepted RSC response renders, as the
+ * render lifecycle probes the matched route before its response headers, and
+ * report whether it read a dynamic API. Usage recorded earlier in the request
+ * doesn't belong to the source, so it is discarded first.
+ */
+async function probeAppPageInterceptSourceDynamicUsage<TRoute extends AppPageDispatchRoute>(
+  options: DispatchAppPageOptions<TRoute>,
+  route: TRoute,
+  params: AppPageParams,
+  searchParams: URLSearchParams,
+): Promise<boolean> {
+  const probes = options.createInterceptSourceProbes?.(route, params, searchParams);
+  if (!probes) return false;
+  consumeDynamicUsage();
+  const loadingTreePositions = getActiveLoadingTreePositions(route);
+  // Special errors and other probe failures surface through the intercepted
+  // response's own render, as before.
+  await probeAppPageLayouts({
+    layoutCount: getAppPageLayoutProbeCount(route, loadingTreePositions),
+    async onLayoutError() {
+      return null;
+    },
+    probeLayoutAt: probes.probeLayoutAt,
+    runWithSuppressedHookWarning(probe) {
+      return options.runWithSuppressedHookWarning(probe);
+    },
+  });
+  if (loadingTreePositions.length === 0) {
+    await probeAppPageComponent({
+      awaitAsyncResult: true,
+      async onError() {
+        return null;
+      },
+      probePage: probes.probePage,
+      runWithSuppressedHookWarning(probe) {
+        return options.runWithSuppressedHookWarning(probe);
+      },
+    });
+  }
+  return consumeDynamicUsage();
 }
 
 export async function dispatchAppPage<TRoute extends AppPageDispatchRoute>(
@@ -1043,7 +1101,8 @@ async function dispatchAppPageInner<TRoute extends AppPageDispatchRoute>(
   let interceptDynamicConfig: string | null | undefined;
   let interceptDynamicConfigResolved = false;
   // Whether the source route that the intercepted response renders is
-  // force-dynamic or revalidate = 0, from the config activated for its render.
+  // force-dynamic or revalidate = 0, from the config activated for its render,
+  // or read a dynamic API while probed.
   let isInterceptSourceKnownDynamic = false;
   const interceptResult = await resolveAppPageIntercept<
     TRoute,
@@ -1088,7 +1147,7 @@ async function dispatchAppPageInner<TRoute extends AppPageDispatchRoute>(
       setCurrentFetchCacheMode(options.resolveRouteFetchCacheMode?.(interceptRoute) ?? null);
       setCurrentFetchRevalidate(sourceRevalidateSeconds);
       setCurrentForceDynamicFetchDefault(sourceDynamicConfig === "force-dynamic");
-      return options.buildPageElement(
+      const interceptElement = await options.buildPageElement(
         interceptRoute,
         interceptParams,
         interceptOpts,
@@ -1100,6 +1159,17 @@ async function dispatchAppPageInner<TRoute extends AppPageDispatchRoute>(
           serveStreamingMetadata: placeGeneratedMetadataInBody,
         },
       );
+      if (
+        await probeAppPageInterceptSourceDynamicUsage(
+          options,
+          interceptRoute,
+          interceptParams,
+          interceptSearchParams,
+        )
+      ) {
+        isInterceptSourceKnownDynamic = true;
+      }
+      return interceptElement;
     },
     cleanPathname: options.cleanPathname,
     currentRoute: route,

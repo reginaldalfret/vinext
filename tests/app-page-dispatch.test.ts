@@ -290,6 +290,7 @@ type CreateDispatchOptionsOverrides = {
   cleanPathname?: string;
   clearRequestContext?: DispatchOptions["clearRequestContext"];
   createRscOnErrorHandler?: DispatchOptions["createRscOnErrorHandler"];
+  createInterceptSourceProbes?: DispatchOptions["createInterceptSourceProbes"];
   dynamicConfig?: DispatchOptions["dynamicConfig"];
   dynamicParamsConfig?: DispatchOptions["dynamicParamsConfig"];
   findIntercept?: DispatchOptions["findIntercept"];
@@ -358,6 +359,7 @@ function createDispatchOptions(overrides: CreateDispatchOptionsOverrides = {}) {
     bypassInterceptionContextCache: overrides.bypassInterceptionContextCache,
     cleanPathname: overrides.cleanPathname ?? "/posts/hello",
     clearRequestContext,
+    createInterceptSourceProbes: overrides.createInterceptSourceProbes,
     createRscOnErrorHandler: overrides.createRscOnErrorHandler ?? (() => () => undefined),
     draftModeSecret: "draft-secret",
     dynamicConfig: overrides.dynamicConfig,
@@ -2871,6 +2873,8 @@ describe("app page dispatch", () => {
     ];
 
     function dispatchIntercept(overrides: CreateDispatchOptionsOverrides) {
+      // Start from a request headers context, not one an earlier test left.
+      setHeadersContext(null);
       const { options } = createDispatchOptions({
         async buildPageElement(route) {
           return route.pattern;
@@ -2895,6 +2899,61 @@ describe("app page dispatch", () => {
       });
       return dispatchAppPage(options);
     }
+
+    for (const reader of ["layout", "page"] as const) {
+      it(`sends the never-cache header for a source ${reader} that reads a dynamic API`, async () => {
+        // app/feed has no dynamic config, but its ${reader} calls headers().
+        const layoutSourceRoute = createRoute({
+          layouts: [{ default: () => null }],
+          params: [],
+          pattern: "/feed",
+          routeSegments: ["feed"],
+        });
+        const createInterceptSourceProbes = vi.fn<
+          NonNullable<DispatchOptions["createInterceptSourceProbes"]>
+        >(() => ({
+          probeLayoutAt() {
+            if (reader === "layout") markDynamicUsage();
+          },
+          probePage() {
+            if (reader === "page") markDynamicUsage();
+          },
+        }));
+        const response = await dispatchIntercept({
+          createInterceptSourceProbes,
+          getSourceRoute: (index) => (index === 1 ? layoutSourceRoute : undefined),
+        });
+
+        await expect(response.text()).resolves.toBe("/feed");
+        expect(createInterceptSourceProbes).toHaveBeenCalledWith(
+          layoutSourceRoute,
+          {},
+          expect.any(URLSearchParams),
+        );
+        expect(response.headers.get("cache-control")).toBe(
+          "private, no-cache, no-store, max-age=0, must-revalidate",
+        );
+      });
+    }
+
+    it("doesn't count dynamic API reads from before the source is probed", async () => {
+      const response = await dispatchIntercept({
+        createInterceptSourceProbes: () => ({ probeLayoutAt() {}, probePage() {} }),
+        findIntercept() {
+          // Stands in for anything the matched target read earlier.
+          markDynamicUsage();
+          return {
+            matchedParams: { id: "123" },
+            page: { default: "modal-page" },
+            slotKey: "modal@app/feed/@modal",
+            sourceRouteIndex: 1,
+          };
+        },
+      });
+
+      await expect(response.text()).resolves.toBe("/feed");
+      expect(response.headers.get("cache-control")).toBeNull();
+    });
 
     for (const config of knownDynamicConfigs) {
       const label = config.dynamicConfig ?? "revalidate = 0";
