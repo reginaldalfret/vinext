@@ -73,13 +73,21 @@ describe("generateRscEntry ISR code generation", () => {
     expect(code).toContain(
       "isStaticGenerationEdgeRuntime: __staticGeneration.isStaticGenerationEdgeRuntime,",
     );
-    expect(code).toContain(`resolveRouteStaticEligible(targetRoute) {
-        return __resolveRouteStaticEligible(targetRoute);
+    expect(code).toContain(`resolveRouteStaticEligible(targetRoute, intercept) {
+        return __resolveRouteStaticEligible(targetRoute, intercept);
       },`);
+    // A direct intercepted RSC response classifies the source's tree with the
+    // intercepting branch in the intercepted slot, and is dynamic when the
+    // intercepted route is.
+    expect(code).toContain(
+      `slotIndex: Object.keys(route.slots ?? {}).indexOf(intercept.interceptSlotKey),`,
+    );
     expect(code).toContain(`  return __isAppPageStaticEligible({
-    ...__resolveRouteStaticGeneration(route, segmentConfigBranches),
+    ...staticGeneration,
     dynamicConfig: segmentConfig.dynamicConfig,
-    isDynamicRoute: route.isDynamic,
+    isDynamicRoute: route.isDynamic || !!intercept?.interceptedRoute.isDynamic,
+    isStaticGenerationEdgeRuntime:
+      staticGeneration.isStaticGenerationEdgeRuntime || __isEdgeRuntime(resolvedIntercept?.runtime),
     revalidateSeconds: segmentConfig.revalidateSeconds,
   });`);
   });

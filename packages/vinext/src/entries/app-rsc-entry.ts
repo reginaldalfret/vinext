@@ -840,6 +840,7 @@ import {
   isAppPageStaticEligible as __isAppPageStaticEligible,
   isEdgeRuntime as __isEdgeRuntime,
   resolveAppPageFetchCacheMode as __resolveAppPageFetchCacheMode,
+  resolveAppPageInterceptSegmentConfigBranches as __resolveAppPageInterceptSegmentConfigBranches,
   resolveAppPageSegmentConfig as __resolveAppPageSegmentConfig,
   resolveAppPageStaticGenerationRuntime as __resolveAppPageStaticGenerationRuntime,
 } from ${JSON.stringify(appSegmentConfigPath)};
@@ -1018,14 +1019,32 @@ function __resolveRouteStaticGeneration(route, segmentConfigBranches) {
 }
 
 // Whether Next.js classifies a route as static or SSG, from the same inputs
-// dispatch reads for the matched route.
-function __resolveRouteStaticEligible(route) {
-  const segmentConfigBranches = __resolveRouteSegmentConfigBranches(route);
+// dispatch reads for the matched route. With an intercept, the route is the
+// source a direct intercepted RSC response renders, and the intercepting
+// branch takes the intercepted slot: Next.js classifies the intercepting
+// route's own tree, which is dynamic when the intercepted route is.
+function __resolveRouteStaticEligible(route, intercept) {
+  const routeBranches = __resolveRouteSegmentConfigBranches(route);
+  const resolvedIntercept = intercept
+    ? __resolveAppPageInterceptSegmentConfigBranches({
+        branches: routeBranches,
+        interceptBranchSegments: intercept.interceptBranchSegments,
+        interceptLayoutSegments: intercept.interceptLayoutSegments,
+        interceptLayouts: intercept.interceptLayouts,
+        interceptPage: intercept.interceptPage,
+        slotIndex: Object.keys(route.slots ?? {}).indexOf(intercept.interceptSlotKey),
+        sourcePageTreePosition: route.routeSegments?.length ?? 0,
+      })
+    : null;
+  const segmentConfigBranches = resolvedIntercept?.branches ?? routeBranches;
   const segmentConfig = __resolveRouteSegmentConfig(route, segmentConfigBranches);
+  const staticGeneration = __resolveRouteStaticGeneration(route, segmentConfigBranches);
   return __isAppPageStaticEligible({
-    ...__resolveRouteStaticGeneration(route, segmentConfigBranches),
+    ...staticGeneration,
     dynamicConfig: segmentConfig.dynamicConfig,
-    isDynamicRoute: route.isDynamic,
+    isDynamicRoute: route.isDynamic || !!intercept?.interceptedRoute.isDynamic,
+    isStaticGenerationEdgeRuntime:
+      staticGeneration.isStaticGenerationEdgeRuntime || __isEdgeRuntime(resolvedIntercept?.runtime),
     revalidateSeconds: segmentConfig.revalidateSeconds,
   });
 }
@@ -1527,8 +1546,8 @@ ${responseStageOnly ? "const __responseStageOptions = {" : "const __appRscHandle
       resolveRouteDynamicConfig(targetRoute) {
         return __resolveRouteDynamicConfig(targetRoute);
       },
-      resolveRouteStaticEligible(targetRoute) {
-        return __resolveRouteStaticEligible(targetRoute);
+      resolveRouteStaticEligible(targetRoute, intercept) {
+        return __resolveRouteStaticEligible(targetRoute, intercept);
       },
       rootForbiddenModule,
       rootNotFoundModule,

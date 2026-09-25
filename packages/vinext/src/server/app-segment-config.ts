@@ -549,6 +549,57 @@ function mergeParallelRuntime(
 }
 
 /**
+ * A direct intercepted RSC response renders the source route with the
+ * intercepting branch in the slot it intercepts. Next.js serves it from the
+ * intercepting route, an app path of its own whose loader tree holds the
+ * source's layouts and that branch, and classifies that tree. This returns the
+ * source's branches with the intercepting branch in place of the intercepted
+ * slot's (a sibling-page intercept has no slot, so its branch is added), and
+ * the branch's own `runtime`, which Next.js merges into the route's.
+ * https://github.com/vercel/next.js/blob/v16.2.7/crates/next-core/src/segment_config.rs#L1323-L1357
+ */
+export function resolveAppPageInterceptSegmentConfigBranches(options: {
+  branches: readonly ParallelAppPageSegmentConfigBranch[];
+  interceptBranchSegments?: readonly string[] | null;
+  interceptLayoutSegments?: readonly (readonly string[])[] | null;
+  interceptLayouts?: readonly (AppRouteSegmentConfigModule | null | undefined)[] | null;
+  interceptPage?: AppRouteSegmentConfigModule | null;
+  /** Index of the intercepted slot's branch in `branches`, or -1. */
+  slotIndex: number;
+  /** The source route's page position, which owns a sibling-page intercept. */
+  sourcePageTreePosition: number;
+}): {
+  branches: ParallelAppPageSegmentConfigBranch[];
+  runtime: EffectiveAppPageSegmentConfig["runtime"];
+} {
+  const slot = options.slotIndex === -1 ? null : options.branches[options.slotIndex];
+  const interceptLayouts = options.interceptLayouts ?? [];
+  const interceptBranch: ParallelAppPageSegmentConfigBranch = {
+    configLayouts: interceptLayouts,
+    configLayoutTreePositions: interceptLayouts.map(
+      (_, index) => options.interceptLayoutSegments?.[index]?.length ?? 0,
+    ),
+    isDefault: false,
+    layout: slot?.layout ?? null,
+    name: slot?.name ?? "children",
+    ownerTreePosition: slot ? slot.ownerTreePosition : options.sourcePageTreePosition,
+    page: options.interceptPage ?? null,
+    routeSegments: options.interceptBranchSegments ?? [],
+  };
+  const branches = [...options.branches];
+  if (slot) branches[options.slotIndex] = interceptBranch;
+  else branches.push(interceptBranch);
+  return {
+    branches,
+    runtime: resolveAppPageStaticGenerationRuntime([
+      interceptBranch.layout?.runtime,
+      ...interceptLayouts.map((layout) => layout?.runtime),
+      interceptBranch.page?.runtime,
+    ]),
+  };
+}
+
+/**
  * One segment of an App page's loader tree, as Next.js's build visits it when
  * it classifies the route.
  */

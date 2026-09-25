@@ -174,6 +174,19 @@ type AppPageDispatchInterceptOptions<TPage = unknown> = {
   interceptTargetRouteGraphId?: string | null;
 };
 
+/**
+ * The intercepting branch a direct intercepted RSC response renders in place
+ * of the source route's slot (or page), and the route it intercepts.
+ */
+export type AppPageStaticEligibilityIntercept<TRoute> = Pick<
+  AppPageDispatchInterceptOptions,
+  | "interceptBranchSegments"
+  | "interceptLayoutSegments"
+  | "interceptLayouts"
+  | "interceptPage"
+  | "interceptSlotKey"
+> & { interceptedRoute: TRoute };
+
 type AppPageModule = {
   default?: unknown;
   dynamic?: unknown;
@@ -431,10 +444,14 @@ export type DispatchAppPageOptions<TRoute extends AppPageDispatchRoute> = {
   /**
    * `isAppPageStaticEligible` for another route, from that route's own segment
    * config, `generateStaticParams`, dynamism and runtime. A direct intercepted
-   * RSC response renders its source route, so it takes the source's
-   * cacheability.
+   * RSC response renders its source route with the intercepting branch in the
+   * intercepted slot, so it passes that branch and the intercepted route:
+   * Next.js classifies the intercepting route's own loader tree.
    */
-  resolveRouteStaticEligible: (route: TRoute) => boolean;
+  resolveRouteStaticEligible: (
+    route: TRoute,
+    intercept?: AppPageStaticEligibilityIntercept<TRoute>,
+  ) => boolean;
   rootForbiddenModule?: AppPageModule | null;
   rootNotFoundModule?: AppPageModule | null;
   rootUnauthorizedModule?: AppPageModule | null;
@@ -1078,7 +1095,7 @@ async function dispatchAppPageInner<TRoute extends AppPageDispatchRoute>(
     resolveNavigationParams(sourceRoute, navigationParams, pathname, interceptOpts) {
       return resolveAppPageNavigationParams(sourceRoute, navigationParams, pathname, interceptOpts);
     },
-    renderInterceptResponse(sourceRoute, interceptElement) {
+    renderInterceptResponse(sourceRoute, interceptElement, interceptOpts) {
       const interceptOnError = options.createRscOnErrorHandler(
         options.cleanPathname,
         sourceRoute.pattern,
@@ -1092,12 +1109,20 @@ async function dispatchAppPageInner<TRoute extends AppPageDispatchRoute>(
         "Content-Type": VINEXT_RSC_CONTENT_TYPE,
         Vary: VINEXT_RSC_VARY_HEADER,
       });
-      // This response renders the source route, so it takes the source's
-      // cacheability, not the matched target's. A source that can't be static
-      // is never cacheable, like its own render. Middleware's policy still
-      // wins, merged after, as in the RSC builder.
+      // This response renders the source route with the intercepting branch,
+      // so it takes that tree's cacheability, not the matched target's. A tree
+      // that can't be static is never cacheable, like its own render.
+      // Middleware's policy still wins, merged after, as in the RSC builder.
       const isSourceStaticEligible =
-        options.pprRuntime !== undefined || options.resolveRouteStaticEligible(sourceRoute);
+        options.pprRuntime !== undefined ||
+        options.resolveRouteStaticEligible(sourceRoute, {
+          interceptBranchSegments: interceptOpts.interceptBranchSegments,
+          interceptLayoutSegments: interceptOpts.interceptLayoutSegments,
+          interceptLayouts: interceptOpts.interceptLayouts,
+          interceptPage: interceptOpts.interceptPage,
+          interceptSlotKey: interceptOpts.interceptSlotKey,
+          interceptedRoute: route,
+        });
       if (!isSourceStaticEligible) interceptHeaders.set("Cache-Control", NEVER_CACHE_CONTROL);
       mergeMiddlewareResponseHeaders(interceptHeaders, options.middlewareContext.headers);
       applyRscCompatibilityIdHeader(interceptHeaders);

@@ -2491,7 +2491,68 @@ describe("app page dispatch", () => {
     const response = await dispatchAppPage(options);
 
     await expect(response.text()).resolves.toBe("/feed");
-    expect(resolveRouteStaticEligible).toHaveBeenCalledWith(sourceRoute);
+    expect(resolveRouteStaticEligible).toHaveBeenCalledWith(
+      sourceRoute,
+      expect.objectContaining({ interceptedRoute: currentRoute }),
+    );
+    expect(response.headers.get("cache-control")).toBe(
+      "private, no-cache, no-store, max-age=0, must-revalidate",
+    );
+  });
+
+  it("classifies intercepted RSC with the intercepting branch in the source's slot", async () => {
+    // app/feed/page.tsx is static, but app/feed/@modal/(.)photos/[id]/page.tsx
+    // sets dynamic = "force-dynamic". Next.js serves the response from the
+    // intercepting route, whose tree includes that page.
+    const sourceRoute = createRoute({ params: [], pattern: "/feed", routeSegments: ["feed"] });
+    const currentRoute = createRoute({
+      params: ["id"],
+      pattern: "/photos/[id]",
+      routeSegments: ["photos", "[id]"],
+    });
+    const interceptLayouts = [{ default: "modal-layout" }];
+    const interceptPage = { default: "modal-page", dynamic: "force-dynamic" };
+    const resolveRouteStaticEligible = vi.fn<DispatchOptions["resolveRouteStaticEligible"]>(
+      (_route, intercept) =>
+        (intercept?.interceptPage as { dynamic?: string } | undefined)?.dynamic !== "force-dynamic",
+    );
+    const { options } = createDispatchOptions({
+      async buildPageElement(route) {
+        return route.pattern;
+      },
+      cleanPathname: "/photos/123",
+      findIntercept: () => ({
+        interceptBranchSegments: ["(.)photos", "[id]"],
+        interceptLayouts,
+        interceptLayoutSegments: [["(.)photos"]],
+        matchedParams: { id: "123" },
+        page: interceptPage,
+        slotKey: "modal@app/feed/@modal",
+        sourceRouteIndex: 1,
+      }),
+      getSourceRoute(sourceRouteIndex) {
+        return sourceRouteIndex === 1 ? sourceRoute : undefined;
+      },
+      isProduction: true,
+      isRscRequest: true,
+      renderToReadableStream(element) {
+        return createStream([typeof element === "string" ? element : "unexpected-element"]);
+      },
+      resolveRouteStaticEligible,
+      route: currentRoute,
+    });
+
+    const response = await dispatchAppPage(options);
+
+    await expect(response.text()).resolves.toBe("/feed");
+    expect(resolveRouteStaticEligible).toHaveBeenCalledWith(sourceRoute, {
+      interceptBranchSegments: ["(.)photos", "[id]"],
+      interceptLayoutSegments: [["(.)photos"]],
+      interceptLayouts,
+      interceptPage,
+      interceptSlotKey: "modal@app/feed/@modal",
+      interceptedRoute: currentRoute,
+    });
     expect(response.headers.get("cache-control")).toBe(
       "private, no-cache, no-store, max-age=0, must-revalidate",
     );

@@ -7,6 +7,7 @@ import {
   lastDynamicSegmentHasGenerateStaticParams,
   resolveAppPageDynamicConfig,
   resolveAppPageFetchCacheMode,
+  resolveAppPageInterceptSegmentConfigBranches,
   resolveAppPageSegmentConfig,
   resolveAppPageStaticGenerationRuntime,
   resolveAppRouteHandlerFetchCacheMode,
@@ -976,5 +977,112 @@ describe("isAppPageStaticEligible", () => {
         isAppPageStaticEligible({ ...base, ...config, isStaticGenerationEdgeRuntime: true }),
       ).toBe(false);
     }
+  });
+});
+
+describe("resolveAppPageInterceptSegmentConfigBranches", () => {
+  // app/layout.tsx, app/feed/layout.tsx, app/feed/page.tsx,
+  // app/feed/@modal/default.tsx and app/feed/@modal/(.)photos/[id]/page.tsx.
+  const layouts = [{}, {}];
+  const layoutTreePositions = [0, 1];
+  const routeSegments = ["feed"];
+  const modalDefault = {
+    isDefault: true,
+    layout: null,
+    name: "modal",
+    ownerTreePosition: 1,
+    page: {},
+  };
+
+  function classify(interceptPage: Record<string, unknown>, isDynamicRoute = false) {
+    const { branches, runtime } = resolveAppPageInterceptSegmentConfigBranches({
+      branches: [modalDefault],
+      interceptBranchSegments: ["(.)photos", "[id]"],
+      interceptLayouts: [],
+      interceptLayoutSegments: [],
+      interceptPage,
+      slotIndex: 0,
+      sourcePageTreePosition: 1,
+    });
+    const config = resolveAppPageSegmentConfig({
+      layouts,
+      layoutTreePositions,
+      page: {},
+      parallelBranches: branches,
+      routeSegments,
+    });
+    return isAppPageStaticEligible({
+      dynamicConfig: config.dynamicConfig,
+      hasGenerateStaticParams: hasAppPageGenerateStaticParamsAtLastDynamicSegment({
+        childrenSlot: { ownerTreePath: "/feed", state: "active" },
+        layouts,
+        layoutTreePositions,
+        page: {},
+        parallelBranches: branches,
+        routeSegments,
+      }),
+      isDynamicRoute,
+      isStaticGenerationEdgeRuntime: isEdgeRuntime(runtime),
+      revalidateSeconds: config.revalidateSeconds,
+    });
+  }
+
+  it("puts the intercepting branch in place of the intercepted slot's", () => {
+    const interceptPage = { dynamic: "force-dynamic" };
+    const { branches } = resolveAppPageInterceptSegmentConfigBranches({
+      branches: [modalDefault],
+      interceptBranchSegments: ["(.)photos", "[id]"],
+      interceptLayouts: [{ revalidate: 60 }],
+      interceptLayoutSegments: [["(.)photos"]],
+      interceptPage,
+      slotIndex: 0,
+      sourcePageTreePosition: 1,
+    });
+    expect(branches).toEqual([
+      {
+        configLayouts: [{ revalidate: 60 }],
+        configLayoutTreePositions: [1],
+        isDefault: false,
+        layout: null,
+        name: "modal",
+        ownerTreePosition: 1,
+        page: interceptPage,
+        routeSegments: ["(.)photos", "[id]"],
+      },
+    ]);
+  });
+
+  it("adds a sibling-page intercept's branch at the source page", () => {
+    const { branches } = resolveAppPageInterceptSegmentConfigBranches({
+      branches: [modalDefault],
+      interceptBranchSegments: ["(.)photos", "[id]"],
+      interceptPage: {},
+      slotIndex: -1,
+      sourcePageTreePosition: 1,
+    });
+    expect(branches).toHaveLength(2);
+    expect(branches[0]).toBe(modalDefault);
+    expect(branches[1]).toMatchObject({ isDefault: false, ownerTreePosition: 1 });
+  });
+
+  it("keeps a static intercepting branch static", () => {
+    expect(classify({})).toBe(true);
+  });
+
+  it("makes the tree dynamic when the intercepting page is force-dynamic", () => {
+    expect(classify({ dynamic: "force-dynamic" })).toBe(false);
+  });
+
+  it("makes the tree dynamic when the intercepting page sets revalidate = 0", () => {
+    expect(classify({ revalidate: 0 })).toBe(false);
+  });
+
+  it("disables static generation when the intercepting page is edge", () => {
+    expect(classify({ runtime: "edge" })).toBe(false);
+  });
+
+  it("needs generateStaticParams on the intercepting branch of a dynamic intercepted route", () => {
+    expect(classify({}, true)).toBe(false);
+    expect(classify({ generateStaticParams: () => [] }, true)).toBe(true);
   });
 });

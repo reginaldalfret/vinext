@@ -174,7 +174,11 @@ type ResolveAppPageInterceptOptions<TRoute, TPage, TInterceptOpts, TElement> = {
     pathname: string,
     interceptOpts: TInterceptOpts,
   ) => AppPageParams;
-  renderInterceptResponse: (route: TRoute, element: TElement) => Promise<Response> | Response;
+  renderInterceptResponse: (
+    route: TRoute,
+    element: TElement,
+    interceptOpts: TInterceptOpts,
+  ) => Promise<Response> | Response;
   resolveSearchParams?: (
     route: TRoute,
     searchParams: URLSearchParams,
@@ -773,7 +777,7 @@ export async function resolveAppPageIntercept<TRoute, TPage, TInterceptOpts, TEl
 
     return {
       interceptOpts: undefined,
-      response: await options.renderInterceptResponse(renderRoute, interceptElement),
+      response: await options.renderInterceptResponse(renderRoute, interceptElement, interceptOpts),
     };
   }
 
